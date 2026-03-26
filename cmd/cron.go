@@ -62,7 +62,6 @@ var cronCmd = &cobra.Command{
 	},
 }
 
-
 func startServer() {
 	cfg := context.AppCtx.Config.ServerConfig
 

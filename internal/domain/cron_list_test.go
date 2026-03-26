@@ -29,24 +29,24 @@ func TestGetCronJobs_WithJobs(t *testing.T) {
 	}
 
 	job1 := CronJob{
-		ID:       "abc-job1",
-		Name:     "job1",
+		ID:        "abc-job1",
+		Name:      "job1",
 		Container: container,
-		Enabled:  true,
-		Schedule: "@every 1h",
-		Command:  "echo hello",
-		User:     "root",
-		Status:   StatusIdle,
+		Enabled:   true,
+		Schedule:  "@every 1h",
+		Command:   "echo hello",
+		User:      "root",
+		Status:    StatusIdle,
 	}
 	job2 := CronJob{
-		ID:       "abc-job2",
-		Name:     "job2",
+		ID:        "abc-job2",
+		Name:      "job2",
 		Container: container,
-		Enabled:  true,
-		Schedule: "@every 5m",
-		Command:  "date",
-		User:     "www-data",
-		Status:   StatusIdle,
+		Enabled:   true,
+		Schedule:  "@every 5m",
+		Command:   "date",
+		User:      "www-data",
+		Status:    StatusIdle,
 	}
 
 	manager.Add(container, job1)
@@ -79,14 +79,14 @@ func TestGetCronJobs_NilContainer(t *testing.T) {
 	}
 
 	job := CronJob{
-		ID:       "abc-job1",
-		Name:     "job1",
+		ID:        "abc-job1",
+		Name:      "job1",
 		Container: container,
-		Enabled:  true,
-		Schedule: "@every 1h",
-		Command:  "echo hello",
-		User:     "root",
-		Status:   StatusIdle,
+		Enabled:   true,
+		Schedule:  "@every 1h",
+		Command:   "echo hello",
+		User:      "root",
+		Status:    StatusIdle,
 	}
 
 	manager.Add(container, job)

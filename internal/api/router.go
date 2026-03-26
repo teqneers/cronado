@@ -18,9 +18,7 @@ func SetupRouter() *gin.Engine {
 	}
 
 	api := r.Group("/api")
-	{
-		api.GET("/cron-job", GetCronJobList)
-	}
+	api.GET("/cron-job", GetCronJobList)
 
 	return r
 }

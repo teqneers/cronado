@@ -15,7 +15,6 @@ linters:
     gocritic:
       enabled-checks:
         - dupImport
-        - ifElseChain
         - nestingReduce
         - unnecessaryBlock
   exclusions:

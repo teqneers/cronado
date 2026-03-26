@@ -3,8 +3,9 @@ package notification
 import (
 	"log/slog"
 	"sync"
-	"github.com/teqneers/cronado/internal/context"
 	"time"
+
+	"github.com/teqneers/cronado/internal/context"
 )
 
 const (

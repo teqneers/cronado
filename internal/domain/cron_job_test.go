@@ -8,9 +8,9 @@ import (
 
 func TestCronJob_GetShortContainerID(t *testing.T) {
 	tests := []struct {
-		name      string
-		cronJob   CronJob
-		expected  string
+		name     string
+		cronJob  CronJob
+		expected string
 	}{
 		{
 			name: "with container",
@@ -47,9 +47,9 @@ func TestCronJob_GetShortContainerID(t *testing.T) {
 
 func TestCronJob_GetContainerDisplayName(t *testing.T) {
 	tests := []struct {
-		name      string
-		cronJob   CronJob
-		expected  string
+		name     string
+		cronJob  CronJob
+		expected string
 	}{
 		{
 			name: "with named container",
@@ -308,7 +308,7 @@ func TestCronJob_EdgeCases(t *testing.T) {
 		}
 
 		cronJob := CronJob{
-			Name:      "   ",  // whitespace only
+			Name:      "   ", // whitespace only
 			Container: container,
 			Schedule:  "@every 5m",
 			Command:   "echo hello",

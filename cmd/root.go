@@ -3,12 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"github.com/teqneers/cronado/internal/config"
-	"github.com/teqneers/cronado/internal/context"
-	"github.com/teqneers/cronado/internal/logging"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/teqneers/cronado/internal/config"
+	"github.com/teqneers/cronado/internal/context"
+	"github.com/teqneers/cronado/internal/logging"
 )
 
 // rootCmd represents the base command when called without any subcommands

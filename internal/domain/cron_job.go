@@ -17,12 +17,12 @@ const (
 )
 
 type CronJob struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Container   *Container   `json:"-"`
-	Enabled     bool         `json:"enabled"`
-	Schedule    string       `json:"schedule"`
-	Command     string       `json:"command"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Container   *Container    `json:"-"`
+	Enabled     bool          `json:"enabled"`
+	Schedule    string        `json:"schedule"`
+	Command     string        `json:"command"`
 	User        string        `json:"user"`
 	Timeout     time.Duration `json:"timeout"`
 	Status      string        `json:"status"`

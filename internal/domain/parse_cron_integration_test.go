@@ -3,8 +3,8 @@ package domain
 import (
 	"testing"
 
-	cronadoCtx "github.com/teqneers/cronado/internal/context"
 	"github.com/teqneers/cronado/internal/config"
+	cronadoCtx "github.com/teqneers/cronado/internal/context"
 )
 
 // Integration test for cron parsing from container labels
@@ -31,12 +31,12 @@ func TestParseCronsFromContainerIntegration(t *testing.T) {
 		{
 			name: "multiple cron jobs",
 			labels: map[string]string{
-				"cronado.backup.enabled":  "true",
-				"cronado.backup.schedule": "@daily",
-				"cronado.backup.cmd":      "echo backup",
-				"cronado.cleanup.enabled": "true",
+				"cronado.backup.enabled":   "true",
+				"cronado.backup.schedule":  "@daily",
+				"cronado.backup.cmd":       "echo backup",
+				"cronado.cleanup.enabled":  "true",
 				"cronado.cleanup.schedule": "@hourly",
-				"cronado.cleanup.cmd":     "rm -rf /tmp/*",
+				"cronado.cleanup.cmd":      "rm -rf /tmp/*",
 			},
 			cronPrefix:     "cronado",
 			expectedJobs:   2,
@@ -66,10 +66,10 @@ func TestParseCronsFromContainerIntegration(t *testing.T) {
 		{
 			name: "invalid label format",
 			labels: map[string]string{
-				"cronado.backup":         "invalid",
-				"cronado.backup.enabled": "true",
+				"cronado.backup":          "invalid",
+				"cronado.backup.enabled":  "true",
 				"cronado.backup.schedule": "@daily",
-				"cronado.backup.cmd":     "echo backup",
+				"cronado.backup.cmd":      "echo backup",
 			},
 			cronPrefix:     "cronado",
 			expectedJobs:   1, // Should still parse the valid ones
@@ -169,15 +169,15 @@ func TestHandleContainerIntegration(t *testing.T) {
 			ID:   "multi-job-container",
 			Name: "multi-container",
 			Labels: map[string]string{
-				"cronado.backup.enabled":   "true",
-				"cronado.backup.schedule":  "@daily",
-				"cronado.backup.cmd":       "backup.sh",
-				"cronado.cleanup.enabled":  "true",
-				"cronado.cleanup.schedule": "@hourly",
-				"cronado.cleanup.cmd":      "cleanup.sh",
-				"cronado.disabled.enabled": "false",
+				"cronado.backup.enabled":    "true",
+				"cronado.backup.schedule":   "@daily",
+				"cronado.backup.cmd":        "backup.sh",
+				"cronado.cleanup.enabled":   "true",
+				"cronado.cleanup.schedule":  "@hourly",
+				"cronado.cleanup.cmd":       "cleanup.sh",
+				"cronado.disabled.enabled":  "false",
 				"cronado.disabled.schedule": "@weekly",
-				"cronado.disabled.cmd":     "disabled.sh",
+				"cronado.disabled.cmd":      "disabled.sh",
 			},
 		}
 
@@ -335,11 +335,11 @@ func TestRegisterCronJobIntegration(t *testing.T) {
 		}
 
 		cronJob := CronJob{
-			ID:       "valid-job-container-valid",
-			Name:     "valid",
-			Schedule: "@daily",
-			Command:  "echo valid",
-			Enabled:  true,
+			ID:        "valid-job-container-valid",
+			Name:      "valid",
+			Schedule:  "@daily",
+			Command:   "echo valid",
+			Enabled:   true,
 			Container: container,
 		}
 
@@ -378,8 +378,8 @@ func TestRegisterCronJobIntegration(t *testing.T) {
 
 		// Invalid job - missing required fields
 		invalidJob := CronJob{
-			ID:      "invalid-job-container-invalid",
-			Name:    "invalid",
+			ID:   "invalid-job-container-invalid",
+			Name: "invalid",
 			// Missing Schedule and Command
 			Enabled: true,
 		}
@@ -425,11 +425,11 @@ func TestRegisterCronJobIntegration(t *testing.T) {
 		}
 
 		cronJob := CronJob{
-			ID:       "duplicate-job-container-duplicate",
-			Name:     "duplicate",
-			Schedule: "@hourly",
-			Command:  "echo duplicate",
-			Enabled:  true,
+			ID:        "duplicate-job-container-duplicate",
+			Name:      "duplicate",
+			Schedule:  "@hourly",
+			Command:   "echo duplicate",
+			Enabled:   true,
 			Container: container,
 		}
 

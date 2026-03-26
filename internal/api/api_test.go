@@ -18,10 +18,10 @@ type mockCronJobManager struct {
 }
 
 func (m *mockCronJobManager) Add(_ interface{}, _ interface{}) error { return nil }
-func (m *mockCronJobManager) Remove(_ string)                       {}
-func (m *mockCronJobManager) RemoveJob(_ interface{})               {}
-func (m *mockCronJobManager) IsRegistered(_ string) bool            { return false }
-func (m *mockCronJobManager) Shutdown()                             {}
+func (m *mockCronJobManager) Remove(_ string)                        {}
+func (m *mockCronJobManager) RemoveJob(_ interface{})                {}
+func (m *mockCronJobManager) IsRegistered(_ string) bool             { return false }
+func (m *mockCronJobManager) Shutdown()                              {}
 
 func (m *mockCronJobManager) GetAll() []interface{} {
 	result := make([]interface{}, len(m.jobs))

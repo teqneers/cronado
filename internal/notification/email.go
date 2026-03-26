@@ -34,7 +34,7 @@ func SendEmail(subject, body string) error {
 
 	var msg strings.Builder
 	for k, v := range header {
-		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
 	}
 
 	msg.WriteString("\r\n" + body)

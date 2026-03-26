@@ -26,13 +26,14 @@ func InitializeAlreadyRunningContainers() {
 		All:     true,
 		Filters: runningFilter,
 	})
-	if errdefs.IsUnavailable(err) {
+	switch {
+	case errdefs.IsUnavailable(err):
 		slog.Error("Docker daemon unavailable, cannot list containers", "error", err)
 		return
-	} else if errdefs.IsDeadlineExceeded(err) {
+	case errdefs.IsDeadlineExceeded(err):
 		slog.Error("Container listing timed out", "error", err)
 		return
-	} else if err != nil {
+	case err != nil:
 		slog.Error("Failed to list running containers", "error", err)
 		return
 	}
@@ -65,13 +66,14 @@ func StartEventListener(stop chan os.Signal) {
 		case event := <-eventsChan:
 			handleDockerEvent(event)
 		case err := <-errChan:
-			if errdefs.IsUnavailable(err) {
+			switch {
+			case errdefs.IsUnavailable(err):
 				slog.Error("Docker daemon unavailable", "error", err)
 				util.HandleDockerDaemonPanic(err)
-			} else if errdefs.IsCanceled(err) {
+			case errdefs.IsCanceled(err):
 				slog.Info("Docker event stream was canceled", "error", err)
 				return
-			} else {
+			default:
 				slog.Error("Error receiving Docker events", "error", err)
 				util.HandleDockerDaemonPanic(err)
 			}
@@ -92,20 +94,21 @@ func handleDockerEvent(event events.Message) {
 		containerObj, err := GetOrCreateContainer(ctx, containerID)
 		cancel()
 
-		if errdefs.IsNotFound(err) {
+		switch {
+		case errdefs.IsNotFound(err):
 			// Container not found, remove cron jobs
 			slog.Info("Container not found, removing cron jobs", "container", containerID)
 			GetCronJobManager().Remove(containerID)
 			return
-		} else if errdefs.IsUnavailable(err) {
+		case errdefs.IsUnavailable(err):
 			// Docker daemon is temporarily unavailable, retry later
 			slog.Warn("Docker daemon unavailable, skipping container inspection", "container", containerID, "error", err)
 			return
-		} else if errdefs.IsDeadlineExceeded(err) {
+		case errdefs.IsDeadlineExceeded(err):
 			// Request timed out
 			slog.Warn("Container inspection timed out", "container", containerID, "error", err)
 			return
-		} else if err != nil {
+		case err != nil:
 			slog.Error("Failed to inspect container", "container", containerID, "error", err)
 			return
 		}
@@ -141,11 +144,9 @@ func handleContainer(container *Container) {
 
 		if cronJob.Enabled {
 			registerCronJob(container, cronJob)
-		} else {
+		} else if cronJob.SchedulerId != -1 {
 			// Remove the cron job if it is disabled
-			if cronJob.SchedulerId != -1 {
-				GetCronJobManager().removeJobTyped(cronJob)
-			}
+			GetCronJobManager().removeJobTyped(cronJob)
 		}
 	}
 }
@@ -250,5 +251,7 @@ func registerCronJob(container *Container, cronJob CronJob) {
 		return
 	}
 
-	GetCronJobManager().addTyped(container, cronJob)
+	if err := GetCronJobManager().addTyped(container, cronJob); err != nil {
+		slog.Error("Failed to register cron job", "container", container.DisplayName(), "error", err)
+	}
 }

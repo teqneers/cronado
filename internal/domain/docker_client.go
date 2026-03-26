@@ -3,21 +3,21 @@ package domain
 import (
 	"context"
 	"log/slog"
-	"github.com/teqneers/cronado/internal/util"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/client"
+	"github.com/teqneers/cronado/internal/util"
 )
 
 // DockerClient defines the interface for Docker operations
 type DockerClient interface {
 	// Container operations
-	ContainerList(ctx context.Context, options dockercontainer.ListOptions) ([]types.Container, error)
+	ContainerList(ctx context.Context, options dockercontainer.ListOptions) ([]dockercontainer.Summary, error)
 	ContainerInspect(ctx context.Context, containerID string) (dockercontainer.InspectResponse, error)
-	ContainerExecCreate(ctx context.Context, containerID string, config dockercontainer.ExecOptions) (types.IDResponse, error)
+	ContainerExecCreate(ctx context.Context, containerID string, config dockercontainer.ExecOptions) (dockercontainer.ExecCreateResponse, error)
 	ContainerExecAttach(ctx context.Context, execID string, config dockercontainer.ExecAttachOptions) (types.HijackedResponse, error)
 	ContainerExecInspect(ctx context.Context, execID string) (dockercontainer.ExecInspect, error)
 

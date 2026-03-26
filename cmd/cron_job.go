@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"github.com/teqneers/cronado/internal/context"
-	"github.com/teqneers/cronado/internal/domain"
 
 	"github.com/spf13/cobra"
+	"github.com/teqneers/cronado/internal/context"
+	"github.com/teqneers/cronado/internal/domain"
 )
 
 var cronJobCmd = &cobra.Command{
@@ -28,7 +28,7 @@ var cronJobListCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("Failed to fetch cron jobs: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode == http.StatusNoContent {
 			fmt.Println("No active cron jobs.")

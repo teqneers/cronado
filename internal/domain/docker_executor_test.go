@@ -13,7 +13,7 @@ import (
 
 // MockDockerClient implements the DockerClient interface for testing
 type MockDockerClient struct {
-	execCreateResp  types.IDResponse
+	execCreateResp  dockercontainer.ExecCreateResponse
 	execCreateErr   error
 	execCreateCalls int
 
@@ -27,7 +27,7 @@ type MockDockerClient struct {
 	inspectErr    error
 }
 
-func (m *MockDockerClient) ContainerList(_ context.Context, _ dockercontainer.ListOptions) ([]types.Container, error) {
+func (m *MockDockerClient) ContainerList(_ context.Context, _ dockercontainer.ListOptions) ([]dockercontainer.Summary, error) {
 	return nil, nil
 }
 
@@ -35,7 +35,7 @@ func (m *MockDockerClient) ContainerInspect(_ context.Context, _ string) (docker
 	return m.inspectResult, m.inspectErr
 }
 
-func (m *MockDockerClient) ContainerExecCreate(_ context.Context, _ string, _ dockercontainer.ExecOptions) (types.IDResponse, error) {
+func (m *MockDockerClient) ContainerExecCreate(_ context.Context, _ string, _ dockercontainer.ExecOptions) (dockercontainer.ExecCreateResponse, error) {
 	m.execCreateCalls++
 	return m.execCreateResp, m.execCreateErr
 }
@@ -79,7 +79,7 @@ func TestDockerCommandExecutor_ExecCreateError(t *testing.T) {
 func TestDockerCommandExecutor_ExecAttachError(t *testing.T) {
 	container := &Container{ID: "abc123456789", Name: "test-container"}
 	mockClient := &MockDockerClient{
-		execCreateResp: types.IDResponse{ID: "exec-123"},
+		execCreateResp: dockercontainer.ExecCreateResponse{ID: "exec-123"},
 		execAttachErr:  errors.New("attach failed"),
 	}
 	executor := NewDockerCommandExecutor(mockClient)
@@ -93,7 +93,7 @@ func TestDockerCommandExecutor_ExecAttachError(t *testing.T) {
 func TestDockerCommandExecutor_DefaultUserWhenEmpty(t *testing.T) {
 	container := &Container{ID: "abc123456789", Name: "test-container"}
 	mockClient := &MockDockerClient{
-		execCreateResp: types.IDResponse{ID: "exec-123"},
+		execCreateResp: dockercontainer.ExecCreateResponse{ID: "exec-123"},
 		execAttachErr:  errors.New("attach failed"),
 	}
 	executor := NewDockerCommandExecutor(mockClient)

@@ -52,9 +52,9 @@ func TestContainer_ShortID(t *testing.T) {
 
 func TestContainer_DisplayName(t *testing.T) {
 	tests := []struct {
-		name          string
-		container     Container
-		expectedName  string
+		name         string
+		container    Container
+		expectedName string
 	}{
 		{
 			name: "container with name",
@@ -110,9 +110,9 @@ func TestContainer_DisplayName(t *testing.T) {
 
 func TestContainer_IsRunning(t *testing.T) {
 	tests := []struct {
-		name      string
-		status    string
-		expected  bool
+		name     string
+		status   string
+		expected bool
 	}{
 		{
 			name:     "running status",
@@ -416,9 +416,9 @@ func TestContainer_FieldsAndStructure(t *testing.T) {
 func TestContainer_EdgeCases(t *testing.T) {
 	t.Run("unicode characters in name and labels", func(t *testing.T) {
 		labels := map[string]string{
-			"app.名前":    "テスト",
-			"描述":       "这是一个测试",
-			"emoji":     "🚀",
+			"app.名前": "テスト",
+			"描述":     "这是一个测试",
+			"emoji":  "🚀",
 		}
 
 		container := Container{
@@ -451,11 +451,11 @@ func TestContainer_EdgeCases(t *testing.T) {
 
 	t.Run("labels with dots and special characters", func(t *testing.T) {
 		labels := map[string]string{
-			"com.docker.compose.service":  "web",
-			"io.kubernetes.pod.name":      "my-pod",
-			"cronado.job-1.enabled":       "true",
-			"cronado.job_2.schedule":      "@daily",
-			"special.chars!@#$%^&*()":     "value",
+			"com.docker.compose.service": "web",
+			"io.kubernetes.pod.name":     "my-pod",
+			"cronado.job-1.enabled":      "true",
+			"cronado.job_2.schedule":     "@daily",
+			"special.chars!@#$%^&*()":    "value",
 		}
 
 		container := Container{Labels: labels}

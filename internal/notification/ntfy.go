@@ -37,7 +37,7 @@ func SendNtfy(subject, body string) error {
 	if err != nil {
 		return fmt.Errorf("ntfy send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)

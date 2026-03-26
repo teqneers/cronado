@@ -106,16 +106,16 @@ func (m *MockScheduler) IsStarted() bool {
 
 // MockCommandExecutor implements the CommandExecutor interface for testing
 type MockCommandExecutor struct {
-	mu               sync.Mutex
-	executeCalled    int
-	lastContainer    *Container
-	lastJobName      string
-	lastCommand      string
-	lastUser         string
-	shouldFail       bool
-	executionDelay   time.Duration
-	stdout           string
-	stderr           string
+	mu             sync.Mutex
+	executeCalled  int
+	lastContainer  *Container
+	lastJobName    string
+	lastCommand    string
+	lastUser       string
+	shouldFail     bool
+	executionDelay time.Duration
+	stdout         string
+	stderr         string
 }
 
 func NewMockCommandExecutor() *MockCommandExecutor {
@@ -357,14 +357,14 @@ func createTestCronJobManagerContainer() *Container {
 
 func createTestCronJob(container *Container) CronJob {
 	return CronJob{
-		ID:       "test-123-backup",
-		Name:     "backup",
+		ID:        "test-123-backup",
+		Name:      "backup",
 		Container: container,
-		Enabled:  true,
-		Schedule: "@every 1h",
-		Command:  "echo backup",
-		User:     "root",
-		Status:   StatusIdle,
+		Enabled:   true,
+		Schedule:  "@every 1h",
+		Command:   "echo backup",
+		User:      "root",
+		Status:    StatusIdle,
 	}
 }
 

@@ -33,10 +33,10 @@ type CronJobManager struct {
 
 // CronJobManagerOptions contains configuration options for CronJobManager
 type CronJobManagerOptions struct {
-	Scheduler   Scheduler
-	Executor    CommandExecutor
-	Metrics     MetricsCollector
-	Notifier    NotificationService
+	Scheduler Scheduler
+	Executor  CommandExecutor
+	Metrics   MetricsCollector
+	Notifier  NotificationService
 }
 
 // NewCronJobManager creates a new CronJobManager with dependency injection
@@ -148,7 +148,9 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 
 		// Send notification on failure
 		if m.notifier != nil {
-			m.notifier.SendJobFailure(container, job.Name, err)
+			if notifyErr := m.notifier.SendJobFailure(container, job.Name, err); notifyErr != nil {
+				slog.Warn("Failed to send job failure notification", "error", notifyErr)
+			}
 		}
 	} else {
 		stdout, stderr := m.executor.GetOutput()
@@ -205,19 +207,20 @@ func (m *CronJobManager) Remove(containerID string) {
 	defer m.mu.Unlock()
 
 	for jobID, job := range m.jobs {
-		if job.Container != nil && job.Container.ID == containerID {
-			m.scheduler.Remove(job.SchedulerId)
-			containerShortId := containerID
-			if len(containerID) >= 12 {
-				containerShortId = containerID[:12]
-			}
-			slog.Info("Removed cron job",
-				"job_id", jobID,
-				"container", containerShortId,
-				"cron_job", job.Name)
-			delete(m.jobs, jobID)
-			m.metrics.DecrementScheduledJobs()
+		if job.Container == nil || job.Container.ID != containerID {
+			continue
 		}
+		m.scheduler.Remove(job.SchedulerId)
+		containerShortId := containerID
+		if len(containerID) >= 12 {
+			containerShortId = containerID[:12]
+		}
+		slog.Info("Removed cron job",
+			"job_id", jobID,
+			"container", containerShortId,
+			"cron_job", job.Name)
+		delete(m.jobs, jobID)
+		m.metrics.DecrementScheduledJobs()
 	}
 }
 
@@ -325,4 +328,3 @@ func GetCronJobManager() *CronJobManager {
 	}
 	return nil
 }
-

@@ -58,11 +58,12 @@ func (e *DockerCommandExecutor) ExecuteCommand(container *Container, jobName, co
 	defer cancel()
 
 	execID, err := e.client.ContainerExecCreate(ctx, container.ID, execConfig)
-	if errdefs.IsNotFound(err) {
+	switch {
+	case errdefs.IsNotFound(err):
 		return fmt.Errorf("container not found: %w", err)
-	} else if errdefs.IsUnavailable(err) {
+	case errdefs.IsUnavailable(err):
 		return fmt.Errorf("docker daemon unavailable: %w", err)
-	} else if err != nil {
+	case err != nil:
 		return fmt.Errorf("failed to create exec instance: %w", err)
 	}
 
