@@ -1,0 +1,7 @@
+/.idea
+/config.yaml
+/cronado
+/CLAUDE.md
+/compose.yaml
+dist/
+*.exe
