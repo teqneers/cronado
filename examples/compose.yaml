@@ -1,0 +1,39 @@
+---
+services:
+  cronado:
+    image: ghcr.io/teqneers/cronado:latest
+    container_name: cronado
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      cronado.self-check.enabled: "true"
+      cronado.self-check.schedule: "@every 30s"
+      cronado.self-check.cmd: "date"
+    environment:
+      TZ: Europe/Berlin
+      CRONADO_LOG_LEVEL: info
+      CRONADO_LOG_FORMAT: text
+      CRONADO_DAEMON_WATCHER_ENABLED: "true"
+      CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS: 5
+      CRONADO_METRICS_ENABLED: "true"
+      CRONADO_METRICS_ENDPOINT: /metrics
+      # Notification throttle (seconds before resending same subject)
+      CRONADO_NOTIFY_INTERVAL_SECONDS: 3600
+      # Email notifications (uncomment to enable)
+      # CRONADO_NOTIFY_EMAIL_ENABLED: "true"
+      # CRONADO_NOTIFY_EMAIL_SMTP_HOST: smtp.example.com
+      # CRONADO_NOTIFY_EMAIL_SMTP_PORT: 587
+      # CRONADO_NOTIFY_EMAIL_USERNAME: user@example.com
+      # CRONADO_NOTIFY_EMAIL_PASSWORD: secret
+      # CRONADO_NOTIFY_EMAIL_FROM: cronado@example.com
+      # CRONADO_NOTIFY_EMAIL_TO: alerts@example.com
+      # ntfy notifications (uncomment to enable)
+      # CRONADO_NOTIFY_NTFY_ENABLED: "true"
+      # CRONADO_NOTIFY_NTFY_SERVER: https://ntfy.sh
+      # CRONADO_NOTIFY_NTFY_TOPIC: cronado-alerts
+      # CRONADO_NOTIFY_NTFY_TOKEN: tk_...
+    deploy:
+      resources:
+        limits:
+          memory: "128M"

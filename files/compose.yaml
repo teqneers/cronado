@@ -1,0 +1,89 @@
+---
+# Development/testing compose file for Cronado
+#
+# Usage:
+#   docker compose -f files/compose.yaml up --build
+#
+# Services:
+#   - cronado:  The scheduler (builds from source)
+#   - mailcrab: Email catcher UI at http://localhost:8025
+#   - ntfy:     Push notification UI at http://localhost:8026/cronado-alerts
+#
+# Test jobs:
+#   - job-local: runs `date` every 5s (should succeed)
+#   - job-fail:  runs `false` every 15s (should fail and trigger notifications)
+
+services:
+  mailcrab:
+    image: marlonb/mailcrab:latest
+    container_name: mailcrab
+    restart: unless-stopped
+    ports:
+      - "8025:1080"
+
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: ntfy
+    restart: unless-stopped
+    command: serve
+    ports:
+      - "8026:80"
+    environment:
+      NTFY_BASE_URL: http://localhost:8026
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_ENABLE_SIGNUP: "false"
+      NTFY_ENABLE_LOGIN: "false"
+    volumes:
+      - ntfy_data:/var/lib/ntfy
+
+  cronado:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: cronado
+    restart: unless-stopped
+    depends_on:
+      - mailcrab
+      - ntfy
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      cronado.job-local.enabled: "true"
+      cronado.job-local.schedule: "@every 5s"
+      cronado.job-local.cmd: "date"
+      cronado.job-fail.enabled: "true"
+      cronado.job-fail.schedule: "@every 15s"
+      cronado.job-fail.cmd: "false"
+    environment:
+      TZ: Europe/Berlin
+      CRONADO_APP_NAME: cronado
+      CRONADO_LOG_LEVEL: debug
+      CRONADO_LOG_FORMAT: text
+      CRONADO_SERVER_HOST: "0.0.0.0"
+      CRONADO_DAEMON_WATCHER_ENABLED: "true"
+      CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS: 5
+      CRONADO_NOTIFY_INTERVAL_SECONDS: 60
+      # Email → MailCrab (no auth needed)
+      CRONADO_NOTIFY_EMAIL_ENABLED: "true"
+      CRONADO_NOTIFY_EMAIL_SMTP_HOST: mailcrab
+      CRONADO_NOTIFY_EMAIL_SMTP_PORT: 1025
+      CRONADO_NOTIFY_EMAIL_USERNAME: ""
+      CRONADO_NOTIFY_EMAIL_PASSWORD: ""
+      CRONADO_NOTIFY_EMAIL_FROM: "cronado@example.com"
+      CRONADO_NOTIFY_EMAIL_TO: "admin@example.com"
+      # ntfy → local ntfy server (no auth needed)
+      CRONADO_NOTIFY_NTFY_ENABLED: "true"
+      CRONADO_NOTIFY_NTFY_SERVER: "http://ntfy:80"
+      CRONADO_NOTIFY_NTFY_TOPIC: cronado-alerts
+      CRONADO_NOTIFY_NTFY_TOKEN: ""
+      CRONADO_METRICS_ENABLED: "true"
+      CRONADO_METRICS_ENDPOINT: /metrics
+    deploy:
+      resources:
+        limits:
+          memory: "128M"
+
+volumes:
+  ntfy_data:

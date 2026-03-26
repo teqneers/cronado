@@ -1,0 +1,29 @@
+app_name: "cronado"
+log:
+  level: "info"
+  format: "text"
+cron_label_prefix: "cronado"
+daemon_watcher:
+  enabled: true
+  timeout_seconds: 5
+server:
+  port: "8080"
+  host: "127.0.0.1"
+notify:
+  interval_seconds: 3600
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    username: ""
+    password: ""
+    from: ""
+    to: []
+  ntfy:
+    enabled: false
+    server: "https://ntfy.sh"
+    topic: ""
+    token: ""
+metrics:
+  enabled: true
+  endpoint: "/metrics"

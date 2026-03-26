@@ -1,0 +1,29 @@
+run:
+  go: "1.25"
+  timeout: 5m
+
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - gocritic
+    - gofmt
+    - goimports
+
+linters-settings:
+  gocritic:
+    enabled-checks:
+      - dupImport
+      - ifElseChain
+      - nestingReduce
+      - unnecessaryBlock
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck

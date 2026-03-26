@@ -1,0 +1,50 @@
+version: 2
+
+builds:
+  - main: .
+    binary: cronado
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+dockers:
+  - image_templates:
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    dockerfile: docker/Dockerfile
+  - image_templates:
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+    goarch: arm64
+    dockerfile: docker/Dockerfile
+
+docker_manifests:
+  - name_template: "ghcr.io/teqneers/cronado:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/teqneers/cronado:latest"
+    image_templates:
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"

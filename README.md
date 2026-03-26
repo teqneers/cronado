@@ -1,0 +1,306 @@
+# Cronado
+
+<p align="center">
+  <img src="files/cronado-logo.png" alt="Cronado Logo" width="200">
+</p>
+
+[![CI](https://github.com/teqneers/cronado/actions/workflows/ci.yml/badge.svg)](https://github.com/teqneers/cronado/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/teqneers/cronado)](https://goreportcard.com/report/github.com/teqneers/cronado)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/teqneers/cronado)](go.mod)
+
+A lightweight cron job scheduler for Docker containers. Cronado watches Docker events, detects containers with specific
+labels, and automatically schedules commands to run inside them — no sidecars, no config files per container, just
+labels.
+
+> **Looking for an alternative
+to [Ofelia](https://github.com/mcuadros/ofelia), [Chadburn](https://github.com/PremoWeb/chadburn), [Supercronic](https://github.com/aptible/supercronic),
+or host-level crontab for Docker?** Cronado offers a modern, actively maintained approach with built-in metrics and
+> notifications.
+
+## Why Cronado?
+
+|                                    | Cronado | [Ofelia](https://github.com/mcuadros/ofelia) | [Chadburn](https://github.com/PremoWeb/chadburn) | [Supercronic](https://github.com/aptible/supercronic) | Host crontab |
+|------------------------------------|---------|----------------------------------------------|--------------------------------------------------|-------------------------------------------------------|--------------|
+| No sidecar per container           | Yes     | Yes                                          | Yes                                              | No (runs inside)                                      | Yes          |
+| Automatic container discovery      | Yes     | Yes                                          | Yes                                              | No                                                    | No           |
+| Label-driven configuration         | Yes     | Yes                                          | Yes                                              | No                                                    | No           |
+| Per-job timeout                    | Yes     | No                                           | No                                               | No                                                    | No           |
+| Built-in Prometheus metrics        | Yes     | No                                           | No                                               | Partial                                               | No           |
+| Failure notifications (email/ntfy) | Yes     | No                                           | Slack                                            | No                                                    | No           |
+| Actively maintained                | Yes     | Limited                                      | Dead                                             | Yes                                                   | N/A          |
+| Docker daemon health monitoring    | Yes     | No                                           | No                                               | No                                                    | No           |
+
+## Features
+
+- Schedule commands inside Docker containers via container labels
+- Automatic detection of container start/stop events
+- Per-job configurable execution timeout
+- HTTP API to list active cron jobs
+- CLI for management (`cron` to start, `cron-job list` to inspect)
+- Prometheus metrics (`/metrics`)
+- Failure notifications via email (SMTP) and [ntfy.sh](https://ntfy.sh)
+- Configurable via YAML or environment variables (`CRONADO_` prefix)
+- Docker daemon health monitoring with automatic recovery
+
+## Quick Start
+
+### Docker (recommended)
+
+```bash
+docker run -d \
+  --name cronado \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  ghcr.io/teqneers/cronado:latest
+```
+
+### Docker Compose
+
+```yaml
+services:
+  cronado:
+    image: ghcr.io/teqneers/cronado:latest
+    container_name: cronado
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8080:8080"
+    environment:
+      CRONADO_LOG_LEVEL: info
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/teqneers/cronado.git
+cd cronado
+go build -o cronado main.go
+./cronado cron
+```
+
+## How It Works
+
+```
+                    Docker Engine
+                         |
+          container start/stop events
+                         |
+                    +-----------+
+                    |  Cronado  |
+                    +-----------+
+                    | Event     |----> Detect labels
+                    | Listener  |      (cronado.*.schedule, etc.)
+                    +-----------+
+                         |
+                    Register/remove
+                    cron schedules
+                         |
+                    +-----------+
+                    | Scheduler |----> docker exec into containers
+                    +-----------+      on cron schedule
+                         |
+              +----------+----------+
+              |          |          |
+          Prometheus   Logs    Notifications
+          /metrics              (email/ntfy)
+```
+
+## Scheduling Jobs via Container Labels
+
+Add labels to your containers to define cron jobs:
+
+```
+<prefix>.<job-name>.enabled=true|false
+<prefix>.<job-name>.schedule="@every 10s"
+<prefix>.<job-name>.cmd="echo hello"
+<prefix>.<job-name>.user=root
+<prefix>.<job-name>.timeout=5m
+```
+
+The default prefix is `cronado`. Each job needs at least `enabled`, `schedule`, and `cmd`.
+
+### Example
+
+Run a container with a cron job that logs timestamps every minute:
+
+```bash
+docker run -d \
+  --name my-app \
+  --label cronado.backup.enabled=true \
+  --label cronado.backup.schedule="0 2 * * *" \
+  --label cronado.backup.cmd="pg_dump -U postgres mydb > /backups/daily.sql" \
+  --label cronado.backup.user=postgres \
+  --label cronado.backup.timeout=10m \
+  postgres:16
+```
+
+### Schedule Formats
+
+Cronado supports standard cron expressions and convenience shortcuts:
+
+| Format        | Example        | Description            |
+|---------------|----------------|------------------------|
+| Standard cron | `0 2 * * *`    | Daily at 2:00 AM       |
+| 6-field cron  | `0 30 * * * *` | Every hour at :30      |
+| `@every`      | `@every 5m`    | Every 5 minutes        |
+| `@hourly`     | `@hourly`      | Every hour             |
+| `@daily`      | `@daily`       | Once a day at midnight |
+| `@weekly`     | `@weekly`      | Once a week            |
+| `@monthly`    | `@monthly`     | Once a month           |
+
+### Label Reference
+
+| Property   | Required | Default | Description                                  |
+|------------|----------|---------|----------------------------------------------|
+| `enabled`  | Yes      | —       | Enable/disable the job (`true`/`false`)      |
+| `schedule` | Yes      | —       | Cron expression or `@every` interval         |
+| `cmd`      | Yes      | —       | Command to execute inside the container      |
+| `user`     | No       | `root`  | User to run the command as                   |
+| `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
+
+## Configuration
+
+Cronado uses [Viper](https://github.com/spf13/viper) for configuration. Copy the template:
+
+```bash
+cp config.yaml.dist config.yaml
+```
+
+### Environment Variables
+
+All settings can be overridden with environment variables using the `CRONADO_` prefix:
+
+| Variable                                 | Description                          | Default           |
+|------------------------------------------|--------------------------------------|-------------------|
+| `CRONADO_LOG_LEVEL`                      | Log level (`debug`, `info`, `error`) | `info`            |
+| `CRONADO_LOG_FORMAT`                     | Log format (`text`, `json`)          | `text`            |
+| `CRONADO_CRON_LABEL_PREFIX`              | Label prefix for cron jobs           | `cronado`         |
+| `CRONADO_SERVER_HOST`                    | HTTP server bind address             | `127.0.0.1`       |
+| `CRONADO_SERVER_PORT`                    | HTTP server port                     | `8080`            |
+| `CRONADO_DAEMON_WATCHER_ENABLED`         | Docker daemon health monitoring      | `true`            |
+| `CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS` | Health check interval                | `5`               |
+| `CRONADO_NOTIFY_INTERVAL_SECONDS`        | Notification throttle (same subject) | `3600`            |
+| `CRONADO_NOTIFY_EMAIL_ENABLED`           | Enable email notifications           | `false`           |
+| `CRONADO_NOTIFY_EMAIL_SMTP_HOST`         | SMTP server host                     | —                 |
+| `CRONADO_NOTIFY_EMAIL_SMTP_PORT`         | SMTP server port                     | `587`             |
+| `CRONADO_NOTIFY_EMAIL_USERNAME`          | SMTP username                        | —                 |
+| `CRONADO_NOTIFY_EMAIL_PASSWORD`          | SMTP password                        | —                 |
+| `CRONADO_NOTIFY_EMAIL_FROM`              | Sender address                       | —                 |
+| `CRONADO_NOTIFY_EMAIL_TO`                | Recipients (comma-separated)         | —                 |
+| `CRONADO_NOTIFY_NTFY_ENABLED`            | Enable ntfy notifications            | `false`           |
+| `CRONADO_NOTIFY_NTFY_SERVER`             | ntfy server URL                      | `https://ntfy.sh` |
+| `CRONADO_NOTIFY_NTFY_TOPIC`              | ntfy topic                           | —                 |
+| `CRONADO_NOTIFY_NTFY_TOKEN`              | ntfy auth token                      | —                 |
+| `CRONADO_METRICS_ENABLED`                | Enable Prometheus metrics            | `true`            |
+| `CRONADO_METRICS_ENDPOINT`               | Metrics endpoint path                | `/metrics`        |
+
+## API
+
+### List Active Jobs
+
+```bash
+curl http://127.0.0.1:8080/api/cron-job
+```
+
+Response:
+
+```json
+[
+  {
+    "container_id": "abcdef123456",
+    "cron_job": {
+      "name": "backup",
+      "enabled": true,
+      "schedule": "0 2 * * *",
+      "command": "pg_dump -U postgres mydb > /backups/daily.sql",
+      "user": "postgres",
+      "timeout": 600000000000,
+      "status": "idle",
+      "scheduler_id": 1
+    }
+  }
+]
+```
+
+### CLI
+
+```bash
+./cronado cron-job list
+```
+
+## Metrics
+
+Prometheus metrics are available at `/metrics`:
+
+| Metric                         | Type      | Description                                                     |
+|--------------------------------|-----------|-----------------------------------------------------------------|
+| `cronado_scheduled_jobs`       | Gauge     | Current number of scheduled jobs                                |
+| `cronado_job_executions_total` | Counter   | Total executions (labels: `container_id`, `job_name`, `status`) |
+| `cronado_job_duration_seconds` | Histogram | Execution duration (labels: `container_id`, `job_name`)         |
+
+Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: "cronado"
+    static_configs:
+      - targets: [ "127.0.0.1:8080" ]
+```
+
+## Troubleshooting
+
+### Docker socket permission denied
+
+Ensure the cronado container has access to the Docker socket:
+
+```bash
+docker run -v /var/run/docker.sock:/var/run/docker.sock:ro ...
+```
+
+If running as a non-root user on the host, you may need to add the user to the `docker` group.
+
+### Container not being detected
+
+- Verify labels follow the correct format: `cronado.<job-name>.<property>`
+- Check that `enabled` is set to `true`
+- Ensure `schedule` and `cmd` labels are present
+- Run with `CRONADO_LOG_LEVEL=debug` for detailed output
+
+### Commands timing out
+
+The default timeout is 30 seconds. For long-running commands, set a per-job timeout:
+
+```
+cronado.my-job.timeout=10m
+```
+
+### Default root user
+
+Commands run as `root` by default. Set the `user` label explicitly to use least privilege:
+
+```
+cronado.my-job.user=nobody
+```
+
+## Contributors
+
+Special gratitude to **Sven Walloner** — original author and creator of
+Cronado.
+
+- **Oliver Mueller**
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+For security concerns, see [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+Copyright (c) 2026 [TEQneers GmbH & Co. KG](https://teqneers.de)
