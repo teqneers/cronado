@@ -1,5 +1,6 @@
+version: "2"
+
 run:
-  go: "1.24"
   timeout: 5m
 
 linters:
@@ -8,22 +9,22 @@ linters:
     - errcheck
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
     - gocritic
+  settings:
+    gocritic:
+      enabled-checks:
+        - dupImport
+        - ifElseChain
+        - nestingReduce
+        - unnecessaryBlock
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
     - gofmt
     - goimports
-
-linters-settings:
-  gocritic:
-    enabled-checks:
-      - dupImport
-      - ifElseChain
-      - nestingReduce
-      - unnecessaryBlock
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
