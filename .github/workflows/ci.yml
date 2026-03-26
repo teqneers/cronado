@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
       - run: go test -race -coverprofile=coverage.out ./...
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
       - run: go build -o cronado main.go
 
   integration:
