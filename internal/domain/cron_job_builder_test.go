@@ -242,6 +242,24 @@ func TestCronJobBuilder_SetCommand(t *testing.T) {
 			wantError:   false,
 		},
 		{
+			name:        "double-quoted command (copy-paste from README)",
+			input:       `"echo hello"`,
+			wantCommand: "echo hello",
+			wantError:   false,
+		},
+		{
+			name:        "single-quoted command",
+			input:       `'echo hello'`,
+			wantCommand: "echo hello",
+			wantError:   false,
+		},
+		{
+			name:        "quoted command with surrounding whitespace",
+			input:       `  "echo hello"  `,
+			wantCommand: "echo hello",
+			wantError:   false,
+		},
+		{
 			name:        "empty command",
 			input:       "",
 			wantCommand: "",

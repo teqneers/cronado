@@ -67,6 +67,7 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 // SetCommand sets the command with validation
 func (b *CronJobBuilder) SetCommand(command string) {
 	command = strings.TrimSpace(command)
+	command = strings.Trim(command, `"'`)
 	if command == "" {
 		b.addError("command cannot be empty")
 		return
