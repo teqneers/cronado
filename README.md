@@ -118,8 +118,8 @@ Add labels to your containers to define cron jobs. The default prefix is `cronad
 
 ```
 cronado.<job-name>.enabled=true|false
-cronado.<job-name>.schedule="@every 10s"
-cronado.<job-name>.cmd="echo hello"
+cronado.<job-name>.schedule=@every 10s
+cronado.<job-name>.cmd=echo hello
 cronado.<job-name>.user=root
 cronado.<job-name>.timeout=5m
 ```

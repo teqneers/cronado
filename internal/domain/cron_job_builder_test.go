@@ -163,6 +163,30 @@ func TestCronJobBuilder_SetSchedule(t *testing.T) {
 			wantError:    true,
 		},
 		{
+			name:         "@every with double quotes (copy-paste from README)",
+			input:        `"@every 10s"`,
+			wantSchedule: "@every 10s",
+			wantError:    false,
+		},
+		{
+			name:         "@every with single quotes",
+			input:        `'@every 10s'`,
+			wantSchedule: "@every 10s",
+			wantError:    false,
+		},
+		{
+			name:         "standard cron with double quotes",
+			input:        `"0 2 * * *"`,
+			wantSchedule: "0 2 * * *",
+			wantError:    false,
+		},
+		{
+			name:         "quoted value with surrounding whitespace",
+			input:        `  "@every 5m"  `,
+			wantSchedule: "@every 5m",
+			wantError:    false,
+		},
+		{
 			name:         "invalid cron expression (too few fields)",
 			input:        "0 * *",
 			wantSchedule: "",

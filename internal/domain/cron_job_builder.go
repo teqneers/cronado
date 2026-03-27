@@ -46,12 +46,13 @@ func (b *CronJobBuilder) SetEnabled(value string) {
 // SetSchedule sets the cron schedule with validation
 func (b *CronJobBuilder) SetSchedule(schedule string) {
 	schedule = strings.TrimSpace(schedule)
+	schedule = strings.Trim(schedule, `"'`)
 	if schedule == "" {
 		b.addError("schedule cannot be empty")
 		return
 	}
 
-	// Basic validation - check if it looks like a cron expression or @every syntax
+	// Basic validation - check if it looks like a cron expression or @every/@hourly/etc. syntax
 	if !strings.HasPrefix(schedule, "@") {
 		parts := strings.Fields(schedule)
 		if len(parts) < 5 || len(parts) > 6 {
