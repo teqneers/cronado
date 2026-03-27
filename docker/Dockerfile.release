@@ -1,0 +1,23 @@
+FROM alpine:latest
+
+WORKDIR /opt
+
+RUN apk add --no-cache ca-certificates tzdata
+
+RUN addgroup -S app \
+    && adduser -S -G app app \
+    && addgroup app ping
+
+USER app
+
+EXPOSE 8080
+
+ENV GIN_MODE=release
+
+COPY cronado ./
+
+LABEL org.opencontainers.image.source="https://github.com/teqneers/cronado"
+LABEL org.opencontainers.image.description="Lightweight cron job scheduler for Docker containers"
+LABEL org.opencontainers.image.licenses="MIT"
+
+CMD ["./cronado", "cron"]

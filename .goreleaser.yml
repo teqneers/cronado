@@ -18,14 +18,22 @@ dockers:
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
-    dockerfile: docker/Dockerfile
+      - "--label=org.opencontainers.image.source=https://github.com/teqneers/cronado"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+    dockerfile: docker/Dockerfile.release
   - image_templates:
       - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/teqneers/cronado"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.created={{.Date}}"
     goarch: arm64
-    dockerfile: docker/Dockerfile
+    dockerfile: docker/Dockerfile.release
 
 docker_manifests:
   - name_template: "ghcr.io/teqneers/cronado:{{ .Tag }}"
