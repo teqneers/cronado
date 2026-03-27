@@ -101,7 +101,7 @@ func LoadConfig() *Config {
 	viper.SetDefault("notify.ntfy.token", "")
 
 	// metrics defaults
-	viper.SetDefault("metrics.enabled", false)
+	viper.SetDefault("metrics.enabled", true)
 	viper.SetDefault("metrics.endpoint", "/metrics")
 
 	viper.SetConfigName("config")

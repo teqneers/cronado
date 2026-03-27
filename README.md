@@ -167,7 +167,8 @@ Cronado supports standard cron expressions and convenience shortcuts:
 
 ## Configuration
 
-Cronado uses [Viper](https://github.com/spf13/viper) for configuration. Copy the template:
+Cronado uses [Viper](https://github.com/spf13/viper) for configuration. When running in a container, use
+environment variables — no config file is included in the image. When running from source, copy the template:
 
 ```bash
 cp config.yaml.dist config.yaml
@@ -175,7 +176,7 @@ cp config.yaml.dist config.yaml
 
 ### Environment Variables
 
-All settings can be overridden with environment variables using the `CRONADO_` prefix:
+All settings can be set via environment variables using the `CRONADO_` prefix:
 
 | Variable                                 | Description                          | Default           |
 |------------------------------------------|--------------------------------------|-------------------|
