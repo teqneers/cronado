@@ -255,6 +255,72 @@ scrape_configs:
       - targets: [ "127.0.0.1:8080" ]
 ```
 
+## Advanced Setup
+
+### Docker Socket Proxy
+
+Mounting `/var/run/docker.sock` directly gives cronado (and any attacker who compromises it) full control over the Docker daemon. For production environments, it is strongly recommended to place a socket proxy in between so that only the API endpoints cronado actually needs are exposed.
+
+The example below uses [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy). The `-allowGET` and `-allowPOST` flags are scoped to exactly what cronado requires: reading container/event info and creating exec sessions.
+
+```yaml
+services:
+  cronado:
+    image: ghcr.io/teqneers/cronado:latest
+    container_name: cronado
+    restart: unless-stopped
+    depends_on:
+      docker-proxy:
+        condition: service_healthy
+    environment:
+      CRONADO_SERVER_HOST: "0.0.0.0"
+      DOCKER_HOST: "tcp://docker-proxy:2375"
+    ports:
+      - "8080:8080"
+    networks:
+      - cronado
+      - docker-proxy
+
+  docker-proxy:
+    image: wollomatic/socket-proxy:1
+    container_name: cronado-docker-proxy
+    restart: unless-stopped
+    read_only: true
+    user: "65534:988"   # nobody:docker — adjust GID to match your host's docker group
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    command:
+      - '-loglevel=info'
+      - '-allowhealthcheck'
+      - '-allowfrom=cronado:cronado'
+      - '-listenip=0.0.0.0'
+      - '-allowGET=/(v[.0-9]*/)?(containers/.*|exec/.*|info|events)'
+      - '-allowPOST=/(v[.0-9]*/)?(containers|exec)/.*'
+      - '-allowHEAD=.*'
+      - '-watchdoginterval=30'
+      - '-stoponwatchdog'
+      - '-shutdowngracetime=5'
+    healthcheck:
+      test: ["CMD", "./healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 2
+    networks:
+      - docker-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+networks:
+  cronado:
+  docker-proxy:
+```
+
+> **Note:** The `-allowfrom` flag restricts which containers may connect to the proxy. Set it to the cronado
+> container name or network CIDR. The `user` GID (`988` above) must match the `docker` group on your host
+> (`getent group docker` to check).
+
 ## Troubleshooting
 
 ### Docker socket permission denied
