@@ -52,8 +52,12 @@ docker run -d \
   --name cronado \
   -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -e CRONADO_SERVER_HOST=0.0.0.0 \
   ghcr.io/teqneers/cronado:latest
 ```
+
+> **Note:** `CRONADO_SERVER_HOST=0.0.0.0` is required when running in a container. The default `127.0.0.1`
+> binds only to localhost inside the container, making the API unreachable from the host even with `-p 8080:8080`.
 
 ### Docker Compose
 
@@ -68,6 +72,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      CRONADO_SERVER_HOST: "0.0.0.0"
       CRONADO_LOG_LEVEL: info
 ```
 
@@ -109,17 +114,17 @@ go build -o cronado main.go
 
 ## Scheduling Jobs via Container Labels
 
-Add labels to your containers to define cron jobs:
+Add labels to your containers to define cron jobs. The default prefix is `cronado`:
 
 ```
-<prefix>.<job-name>.enabled=true|false
-<prefix>.<job-name>.schedule="@every 10s"
-<prefix>.<job-name>.cmd="echo hello"
-<prefix>.<job-name>.user=root
-<prefix>.<job-name>.timeout=5m
+cronado.<job-name>.enabled=true|false
+cronado.<job-name>.schedule="@every 10s"
+cronado.<job-name>.cmd="echo hello"
+cronado.<job-name>.user=root
+cronado.<job-name>.timeout=5m
 ```
 
-The default prefix is `cronado`. Each job needs at least `enabled`, `schedule`, and `cmd`.
+Each job needs at least `enabled`, `schedule`, and `cmd`. The prefix can be changed via `CRONADO_CRON_LABEL_PREFIX`.
 
 ### Example
 
