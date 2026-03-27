@@ -1,4 +1,7 @@
-FROM golang:1.25-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /opt
 
@@ -9,7 +12,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o cronado main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o cronado main.go
 
 FROM alpine:latest
 
