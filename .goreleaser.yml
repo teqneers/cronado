@@ -40,10 +40,19 @@ docker_manifests:
     image_templates:
       - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
       - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/teqneers/cronado:v{{ .Major }}.{{ .Minor }}"
+    image_templates:
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/teqneers/cronado:v{{ .Major }}"
+    image_templates:
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
+      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
   - name_template: "ghcr.io/teqneers/cronado:latest"
     image_templates:
       - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
       - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
+    skip_push: "{{ if .Prerelease }}true{{ end }}"
 
 archives:
   - format: tar.gz
