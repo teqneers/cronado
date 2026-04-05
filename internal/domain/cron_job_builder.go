@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+// trimOuterQuotes removes a matching pair of outer quotes (" or ') from s.
+// Unlike strings.Trim, it only removes quotes when both the first and last
+// character are the same quote type, preserving quotes inside the value.
+func trimOuterQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
 // CronJobBuilder helps build a cron job from labels with validation
 type CronJobBuilder struct {
 	name      string
@@ -46,7 +58,7 @@ func (b *CronJobBuilder) SetEnabled(value string) {
 // SetSchedule sets the cron schedule with validation
 func (b *CronJobBuilder) SetSchedule(schedule string) {
 	schedule = strings.TrimSpace(schedule)
-	schedule = strings.Trim(schedule, `"'`)
+	schedule = trimOuterQuotes(schedule)
 	if schedule == "" {
 		b.addError("schedule cannot be empty")
 		return
@@ -67,7 +79,7 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 // SetCommand sets the command with validation
 func (b *CronJobBuilder) SetCommand(command string) {
 	command = strings.TrimSpace(command)
-	command = strings.Trim(command, `"'`)
+	command = trimOuterQuotes(command)
 	if command == "" {
 		b.addError("command cannot be empty")
 		return

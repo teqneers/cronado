@@ -271,6 +271,26 @@ func TestCronJobBuilder_SetCommand(t *testing.T) {
 			wantCommand: "",
 			wantError:   true,
 		},
+		{
+			// Regression: trailing single quote was stripped by strings.Trim, causing
+			// an unmatched quote and sh -c exit code 2.
+			name:        "command with single-quoted arguments",
+			input:       `/tmp/check.php -H 'https://example.com' -z 'Europe/Berlin'`,
+			wantCommand: `/tmp/check.php -H 'https://example.com' -z 'Europe/Berlin'`,
+			wantError:   false,
+		},
+		{
+			name:        "command with double-quoted arguments",
+			input:       `curl -H "Accept: application/json" https://example.com`,
+			wantCommand: `curl -H "Accept: application/json" https://example.com`,
+			wantError:   false,
+		},
+		{
+			name:        "command with both single and double quoted arguments",
+			input:       `/tmp/check.php -H 'https://example.com' -u "my user" -z 'Europe/Berlin'`,
+			wantCommand: `/tmp/check.php -H 'https://example.com' -u "my user" -z 'Europe/Berlin'`,
+			wantError:   false,
+		},
 	}
 
 	for _, tt := range tests {
