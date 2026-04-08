@@ -28,7 +28,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 | Per-job timeout                    | Yes     | No                                           | No                                               | No                                                    | No           |
 | Built-in Prometheus metrics        | Yes     | No                                           | No                                               | Partial                                               | No           |
 | Failure notifications (email/ntfy) | Yes     | No                                           | Slack                                            | No                                                    | No           |
-| Actively maintained                | Yes     | Limited                                      | Dead                                             | Yes                                                   | N/A          |
+| Actively maintained                | Yes     | Limited                                      | Slow going                                       | Yes                                                   | N/A          |
 | Docker daemon health monitoring    | Yes     | No                                           | No                                               | No                                                    | No           |
 
 ## Features
