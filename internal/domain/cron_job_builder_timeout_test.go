@@ -62,7 +62,7 @@ func TestCronJobBuilder_SetTimeout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			container := createTestContainer("test-123")
-			builder := NewCronJobBuilder("test-job", container)
+			builder := NewCronJobBuilder("test-job", container, 0, 0)
 			builder.SetTimeout(tt.input)
 
 			if tt.wantError {
@@ -85,7 +85,7 @@ func TestCronJobBuilder_Build_IncludesTimeout(t *testing.T) {
 	container := createTestContainer("test-123")
 
 	t.Run("default timeout", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("true")
 		builder.SetSchedule("@every 5m")
 		builder.SetCommand("echo hello")
@@ -101,7 +101,7 @@ func TestCronJobBuilder_Build_IncludesTimeout(t *testing.T) {
 	})
 
 	t.Run("custom timeout", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("true")
 		builder.SetSchedule("@every 5m")
 		builder.SetCommand("echo hello")
@@ -120,7 +120,7 @@ func TestCronJobBuilder_Build_IncludesTimeout(t *testing.T) {
 
 func TestCronJobBuilder_Reset_IncludesTimeout(t *testing.T) {
 	container := createTestContainer("test-123")
-	builder := NewCronJobBuilder("test-job", container)
+	builder := NewCronJobBuilder("test-job", container, 0, 0)
 
 	builder.SetTimeout("10m")
 	builder.Reset()

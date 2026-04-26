@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -151,6 +152,9 @@ func handleContainer(container *Container) {
 	}
 }
 
+// validJobName matches alphanumeric names with hyphens and underscores
+var validJobName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
 // parseCronsFromContainer extracts cron job definitions from container labels with improved robustness
 func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[string]CronJob {
 	// Phase 1: Parse all labels and group by job name
@@ -183,10 +187,20 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 			slog.Warn("Empty job name in label", "label", label, "container", container.DisplayName())
 			continue
 		}
+		if !validJobName.MatchString(jobName) {
+			slog.Warn("Invalid job name, must match [a-zA-Z0-9][a-zA-Z0-9_-]*",
+				"job_name", jobName, "label", label, "container", container.DisplayName())
+			continue
+		}
 
 		// Get or create builder for this job
 		if _, exists := builders[jobName]; !exists {
-			builders[jobName] = NewCronJobBuilder(jobName, container)
+			var minScheduleInterval, maxTimeout time.Duration
+			if cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil {
+				minScheduleInterval = cronadoCtx.AppCtx.Config.MinScheduleInterval
+				maxTimeout = cronadoCtx.AppCtx.Config.MaxTimeout
+			}
+			builders[jobName] = NewCronJobBuilder(jobName, container, minScheduleInterval, maxTimeout)
 		}
 
 		builder := builders[jobName]

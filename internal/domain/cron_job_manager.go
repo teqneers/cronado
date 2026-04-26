@@ -102,8 +102,9 @@ func (m *CronJobManager) addTyped(container *Container, job CronJob) error {
 		"container", container.DisplayName(),
 		"cron_job", job.Name,
 		"schedule", job.Schedule,
-		"command", job.Command,
+		"command", truncateForLog(job.Command, 80),
 		"user", job.User)
+	slog.Debug("Cron job command detail", "job_id", jobID, "command", job.Command)
 
 	m.metrics.IncrementScheduledJobs()
 	return nil
@@ -133,7 +134,7 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 		"container", container.DisplayName(),
 		"cron_job", job.Name)
 
-	err := m.executor.ExecuteCommand(container, job.Name, job.Command, job.User, job.Timeout)
+	stdout, stderr, err := m.executor.ExecuteCommand(container, job.Name, job.Command, job.User, job.Timeout)
 	duration := time.Since(startTime).Seconds()
 
 	// Record metrics
@@ -153,7 +154,6 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 			}
 		}
 	} else {
-		stdout, stderr := m.executor.GetOutput()
 		if stdout != "" {
 			slog.Debug("Job stdout", "job_id", job.ID, "output", stdout)
 		}
@@ -291,6 +291,14 @@ func (m *CronJobManager) GetJobCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.jobs)
+}
+
+// truncateForLog shortens a string for log output, appending "..." if truncated.
+func truncateForLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // CronSchedulerAdapter adapts robfig/cron to the Scheduler interface

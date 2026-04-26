@@ -142,6 +142,60 @@ func TestNotify_DifferentSubjectsNotThrottled(t *testing.T) {
 	}
 }
 
+func TestNotify_WithEmailEnabled(t *testing.T) {
+	lastSent = LastSend{list: make(map[string]int64)}
+
+	context.AppCtx = &context.AppContext{
+		Config: &config.Config{
+			Notify: config.Notify{
+				IntervalSeconds: 60,
+				Email: config.EmailConfig{
+					Enabled:    true,
+					SMTPHost:   "127.0.0.1",
+					SMTPPort:   19999,
+					RequireTLS: false,
+					From:       "test@example.com",
+					To:         []string{"admin@example.com"},
+				},
+			},
+		},
+	}
+
+	// Should not panic; email send will fail but Notify handles the error internally
+	Notify("email test", "body")
+
+	// Timestamp should still be recorded
+	_, ok := lastSent.Get("email test")
+	if !ok {
+		t.Error("expected timestamp to be recorded even when email send fails")
+	}
+}
+
+func TestNotify_WithNtfyEnabled(t *testing.T) {
+	lastSent = LastSend{list: make(map[string]int64)}
+
+	context.AppCtx = &context.AppContext{
+		Config: &config.Config{
+			Notify: config.Notify{
+				IntervalSeconds: 60,
+				Ntfy: config.NtfyConfig{
+					Enabled: true,
+					Server:  "http://127.0.0.1:19999",
+					Topic:   "test-topic",
+				},
+			},
+		},
+	}
+
+	// Should not panic; ntfy send will fail but Notify handles the error internally
+	Notify("ntfy test", "body")
+
+	_, ok := lastSent.Get("ntfy test")
+	if !ok {
+		t.Error("expected timestamp to be recorded even when ntfy send fails")
+	}
+}
+
 func TestTimeNowUnix(t *testing.T) {
 	now := timeNowUnix()
 	actual := time.Now().Unix()

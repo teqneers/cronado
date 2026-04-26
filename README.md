@@ -185,6 +185,9 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_CRON_LABEL_PREFIX`              | Label prefix for cron jobs           | `cronado`         |
 | `CRONADO_SERVER_HOST`                    | HTTP server bind address             | `127.0.0.1`       |
 | `CRONADO_SERVER_PORT`                    | HTTP server port                     | `8080`            |
+| `CRONADO_SERVER_API_TOKEN`               | Bearer token for API/metrics auth    | — (disabled)      |
+| `CRONADO_MIN_SCHEDULE_INTERVAL`          | Minimum `@every` interval            | `1m`              |
+| `CRONADO_MAX_TIMEOUT`                    | Maximum allowed job timeout          | `12h`             |
 | `CRONADO_DAEMON_WATCHER_ENABLED`         | Docker daemon health monitoring      | `true`            |
 | `CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS` | Health check interval                | `5`               |
 | `CRONADO_NOTIFY_INTERVAL_SECONDS`        | Notification throttle (same subject) | `3600`            |
@@ -195,6 +198,7 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_NOTIFY_EMAIL_PASSWORD`          | SMTP password                        | —                 |
 | `CRONADO_NOTIFY_EMAIL_FROM`              | Sender address                       | —                 |
 | `CRONADO_NOTIFY_EMAIL_TO`                | Recipients (comma-separated)         | —                 |
+| `CRONADO_NOTIFY_EMAIL_REQUIRE_TLS`       | Require TLS for SMTP connections     | `true`            |
 | `CRONADO_NOTIFY_NTFY_ENABLED`            | Enable ntfy notifications            | `false`           |
 | `CRONADO_NOTIFY_NTFY_SERVER`             | ntfy server URL                      | `https://ntfy.sh` |
 | `CRONADO_NOTIFY_NTFY_TOPIC`              | ntfy topic                           | —                 |
@@ -203,6 +207,22 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_METRICS_ENDPOINT`               | Metrics endpoint path                | `/metrics`        |
 
 ## API
+
+### Authentication
+
+The API and metrics endpoints can optionally be protected with a Bearer token. Set the token via environment variable:
+
+```bash
+CRONADO_SERVER_API_TOKEN=my-secret-token
+```
+
+When a token is configured, all requests to `/api/*` and `/metrics` must include the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job
+```
+
+When no token is set (the default), authentication is disabled and all endpoints are open. For network-exposed deployments, either set a token or place Cronado behind a reverse proxy with its own authentication.
 
 ### List Active Jobs
 
@@ -356,6 +376,19 @@ Commands run as `root` by default. Set the `user` label explicitly to use least 
 cronado.my-job.user=nobody
 ```
 
+
+## Security
+
+Cronado includes several built-in security measures:
+
+- **API authentication** -- optional Bearer token protects `/api/*` and `/metrics` endpoints
+- **TLS-enforced email** -- SMTP notifications use mandatory TLS by default (configurable via `CRONADO_NOTIFY_EMAIL_REQUIRE_TLS`)
+- **Schedule rate limiting** -- `@every` schedules are rejected if below the minimum interval (default 1 minute), preventing accidental DoS
+- **Timeout cap** -- job timeouts are capped at a configurable maximum (default 12 hours) to prevent runaway executions
+- **Job name validation** -- only alphanumeric characters, hyphens, and underscores are accepted in job names
+- **Command log redaction** -- commands are truncated in INFO logs to avoid leaking credentials; full commands are logged at DEBUG level only
+
+For a full discussion of the security model, including Docker socket access and `sh -c` execution, see [SECURITY.md](SECURITY.md).
 
 ## Contributors
 

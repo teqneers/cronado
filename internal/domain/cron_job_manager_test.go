@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -122,7 +123,7 @@ func NewMockCommandExecutor() *MockCommandExecutor {
 	return &MockCommandExecutor{}
 }
 
-func (m *MockCommandExecutor) ExecuteCommand(container *Container, jobName, command, user string, timeout time.Duration) error {
+func (m *MockCommandExecutor) ExecuteCommand(container *Container, jobName, command, user string, timeout time.Duration) (string, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -137,16 +138,10 @@ func (m *MockCommandExecutor) ExecuteCommand(container *Container, jobName, comm
 	}
 
 	if m.shouldFail {
-		return errors.New("mock execution failed")
+		return "", "", errors.New("mock execution failed")
 	}
 
-	return nil
-}
-
-func (m *MockCommandExecutor) GetOutput() (stdout, stderr string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.stdout, m.stderr
+	return m.stdout, m.stderr, nil
 }
 
 // Helper methods for testing
@@ -941,5 +936,25 @@ func TestCronJobManager_GetJobCount(t *testing.T) {
 	manager.Remove(container.ID)
 	if manager.GetJobCount() != 0 {
 		t.Errorf("Expected job count to be 0 after removing all jobs, got %d", manager.GetJobCount())
+	}
+}
+
+func TestTruncateForLog(t *testing.T) {
+	tests := []struct {
+		input  string
+		maxLen int
+		want   string
+	}{
+		{"short", 80, "short"},
+		{"", 80, ""},
+		{"exactly80chars" + strings.Repeat("x", 66), 80, "exactly80chars" + strings.Repeat("x", 66)},
+		{"exactly81chars" + strings.Repeat("x", 67), 80, "exactly81chars" + strings.Repeat("x", 66) + "..."},
+		{strings.Repeat("a", 200), 80, strings.Repeat("a", 80) + "..."},
+	}
+	for _, tt := range tests {
+		got := truncateForLog(tt.input, tt.maxLen)
+		if got != tt.want {
+			t.Errorf("truncateForLog(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+		}
 	}
 }

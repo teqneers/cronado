@@ -20,24 +20,28 @@ func trimOuterQuotes(s string) string {
 
 // CronJobBuilder helps build a cron job from labels with validation
 type CronJobBuilder struct {
-	name      string
-	container *Container
-	enabled   *bool
-	schedule  string
-	command   string
-	user      string
-	timeout   time.Duration
-	hasErrors bool
-	errors    []string
+	name                string
+	container           *Container
+	enabled             *bool
+	schedule            string
+	command             string
+	user                string
+	timeout             time.Duration
+	minScheduleInterval time.Duration
+	maxTimeout          time.Duration
+	hasErrors           bool
+	errors              []string
 }
 
 // NewCronJobBuilder creates a new builder for the given job name
-func NewCronJobBuilder(name string, container *Container) *CronJobBuilder {
+func NewCronJobBuilder(name string, container *Container, minScheduleInterval, maxTimeout time.Duration) *CronJobBuilder {
 	return &CronJobBuilder{
-		name:      name,
-		container: container,
-		user:      "root", // default user
-		timeout:   DefaultTimeout,
+		name:                name,
+		container:           container,
+		user:                "root", // default user
+		timeout:             DefaultTimeout,
+		minScheduleInterval: minScheduleInterval,
+		maxTimeout:          maxTimeout,
 	}
 }
 
@@ -65,7 +69,19 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 	}
 
 	// Basic validation - check if it looks like a cron expression or @every/@hourly/etc. syntax
-	if !strings.HasPrefix(schedule, "@") {
+	if strings.HasPrefix(schedule, "@every ") {
+		// Validate interval duration and enforce minimum
+		durationStr := strings.TrimPrefix(schedule, "@every ")
+		d, err := time.ParseDuration(durationStr)
+		if err != nil {
+			b.addError(fmt.Sprintf("invalid @every duration: %s", durationStr))
+			return
+		}
+		if b.minScheduleInterval > 0 && d < b.minScheduleInterval {
+			b.addError(fmt.Sprintf("schedule interval %s is below minimum %s", d, b.minScheduleInterval))
+			return
+		}
+	} else if !strings.HasPrefix(schedule, "@") {
 		parts := strings.Fields(schedule)
 		if len(parts) < 5 || len(parts) > 6 {
 			b.addError(fmt.Sprintf("invalid cron schedule format: %s (expected 5 or 6 fields)", schedule))
@@ -109,6 +125,10 @@ func (b *CronJobBuilder) SetTimeout(value string) {
 	}
 	if d <= 0 {
 		b.addError("timeout must be positive")
+		return
+	}
+	if b.maxTimeout > 0 && d > b.maxTimeout {
+		b.addError(fmt.Sprintf("timeout %s exceeds maximum %s", d, b.maxTimeout))
 		return
 	}
 	b.timeout = d

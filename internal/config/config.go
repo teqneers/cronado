@@ -3,13 +3,15 @@ package config
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
 
 type ServerConfig struct {
-	Host string
-	Port string
+	Host     string
+	Port     string
+	APIToken string // optional Bearer token for API/metrics authentication
 }
 
 type LogConfig struct {
@@ -24,13 +26,14 @@ type DaemonWatcher struct {
 
 // EmailConfig holds settings for sending notification emails
 type EmailConfig struct {
-	Enabled  bool     // enable or disable email notifications
-	SMTPHost string   // SMTP server host
-	SMTPPort int      // SMTP server port
-	Username string   // SMTP auth username
-	Password string   // SMTP auth password
-	From     string   // sender email address
-	To       []string // recipient email addresses
+	Enabled    bool     // enable or disable email notifications
+	SMTPHost   string   // SMTP server host
+	SMTPPort   int      // SMTP server port
+	Username   string   // SMTP auth username
+	Password   string   // SMTP auth password
+	From       string   // sender email address
+	To         []string // recipient email addresses
+	RequireTLS bool     // require TLS for SMTP connections (default true)
 }
 
 // NtfyConfig holds settings for ntfy.sh notifications
@@ -55,13 +58,15 @@ type Metrics struct {
 
 // Config holds application settings
 type Config struct {
-	AppName         string
-	CronLabelPrefix string
-	DaemonWatcher   DaemonWatcher
-	ServerConfig    ServerConfig
-	Log             LogConfig
-	Notify          Notify
-	Metrics         Metrics
+	AppName             string
+	CronLabelPrefix     string
+	MinScheduleInterval time.Duration // minimum allowed schedule interval (default 1m)
+	MaxTimeout          time.Duration // maximum allowed job timeout (default 12h)
+	DaemonWatcher       DaemonWatcher
+	ServerConfig        ServerConfig
+	Log                 LogConfig
+	Notify              Notify
+	Metrics             Metrics
 }
 
 // LoadConfig reads configurations using Viper
@@ -69,10 +74,13 @@ func LoadConfig() *Config {
 	// set server defaults
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.host", "127.0.0.1")
+	viper.SetDefault("server.api_token", "")
 
 	// set default values for the application
 	viper.SetDefault("app_name", "cronado")
 	viper.SetDefault("cron_label_prefix", "cronado")
+	viper.SetDefault("min_schedule_interval", "1m")
+	viper.SetDefault("max_timeout", "12h")
 
 	// set default values for the daemon watcher
 	viper.SetDefault("daemon_watcher.enabled", true)
@@ -93,6 +101,7 @@ func LoadConfig() *Config {
 	viper.SetDefault("notify.email.password", "")
 	viper.SetDefault("notify.email.from", "")
 	viper.SetDefault("notify.email.to", []string{})
+	viper.SetDefault("notify.email.require_tls", true)
 
 	// ntfy notification defaults
 	viper.SetDefault("notify.ntfy.enabled", false)
@@ -123,16 +132,30 @@ func LoadConfig() *Config {
 		log.Printf("Using config file: %s\n", viper.ConfigFileUsed())
 	}
 
+	minScheduleInterval, err := time.ParseDuration(viper.GetString("min_schedule_interval"))
+	if err != nil {
+		log.Printf("Invalid min_schedule_interval, using default 1m: %v", err)
+		minScheduleInterval = time.Minute
+	}
+	maxTimeout, err := time.ParseDuration(viper.GetString("max_timeout"))
+	if err != nil {
+		log.Printf("Invalid max_timeout, using default 12h: %v", err)
+		maxTimeout = 12 * time.Hour
+	}
+
 	return &Config{
-		AppName:         viper.GetString("app_name"),
-		CronLabelPrefix: viper.GetString("cron_label_prefix"),
+		AppName:             viper.GetString("app_name"),
+		CronLabelPrefix:     viper.GetString("cron_label_prefix"),
+		MinScheduleInterval: minScheduleInterval,
+		MaxTimeout:          maxTimeout,
 		DaemonWatcher: DaemonWatcher{
 			Enabled: viper.GetBool("daemon_watcher.enabled"),
 			Timeout: viper.GetInt("daemon_watcher.timeout_seconds"),
 		},
 		ServerConfig: ServerConfig{
-			Host: viper.GetString("server.host"),
-			Port: viper.GetString("server.port"),
+			Host:     viper.GetString("server.host"),
+			Port:     viper.GetString("server.port"),
+			APIToken: viper.GetString("server.api_token"),
 		},
 		Log: LogConfig{
 			Level:  viper.GetString("log.level"),
@@ -142,13 +165,14 @@ func LoadConfig() *Config {
 			IntervalSeconds: viper.GetInt("notify.interval_seconds"),
 			// Email notifications configuration
 			Email: EmailConfig{
-				Enabled:  viper.GetBool("notify.email.enabled"),
-				SMTPHost: viper.GetString("notify.email.smtp_host"),
-				SMTPPort: viper.GetInt("notify.email.smtp_port"),
-				Username: viper.GetString("notify.email.username"),
-				Password: viper.GetString("notify.email.password"),
-				From:     viper.GetString("notify.email.from"),
-				To:       viper.GetStringSlice("notify.email.to"),
+				Enabled:    viper.GetBool("notify.email.enabled"),
+				SMTPHost:   viper.GetString("notify.email.smtp_host"),
+				SMTPPort:   viper.GetInt("notify.email.smtp_port"),
+				Username:   viper.GetString("notify.email.username"),
+				Password:   viper.GetString("notify.email.password"),
+				From:       viper.GetString("notify.email.from"),
+				To:         viper.GetStringSlice("notify.email.to"),
+				RequireTLS: viper.GetBool("notify.email.require_tls"),
 			},
 			// Ntfy notifications configuration
 			Ntfy: NtfyConfig{

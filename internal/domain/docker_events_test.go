@@ -248,3 +248,62 @@ func TestParseCronsFromContainer_MissingRequired(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCronsFromContainer_InvalidJobNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   int
+	}{
+		{
+			name: "special characters rejected",
+			labels: map[string]string{
+				"cronado.../etc/passwd.enabled":  "true",
+				"cronado.../etc/passwd.schedule": "@daily",
+				"cronado.../etc/passwd.cmd":      "echo hack",
+			},
+			want: 0,
+		},
+		{
+			name: "semicolon rejected",
+			labels: map[string]string{
+				"cronado.job;rm -rf.enabled":  "true",
+				"cronado.job;rm -rf.schedule": "@daily",
+				"cronado.job;rm -rf.cmd":      "echo hack",
+			},
+			want: 0,
+		},
+		{
+			name: "valid name with hyphens and underscores",
+			labels: map[string]string{
+				"cronado.my-backup_job.enabled":  "true",
+				"cronado.my-backup_job.schedule": "@daily",
+				"cronado.my-backup_job.cmd":      "echo ok",
+			},
+			want: 1,
+		},
+		{
+			name: "name starting with hyphen rejected",
+			labels: map[string]string{
+				"cronado.-invalid.enabled":  "true",
+				"cronado.-invalid.schedule": "@daily",
+				"cronado.-invalid.cmd":      "echo bad",
+			},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			container := &Container{
+				ID:     "abc123456789",
+				Name:   "test-container",
+				Labels: tt.labels,
+			}
+			result := parseCronsFromContainer(container, "cronado")
+			if len(result) != tt.want {
+				t.Errorf("expected %d cron jobs, got %d", tt.want, len(result))
+			}
+		})
+	}
+}

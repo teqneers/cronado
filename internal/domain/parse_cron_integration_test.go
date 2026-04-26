@@ -99,6 +99,13 @@ func TestParseCronsFromContainerIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set up global context for parseCronsFromContainer
+			cronadoCtx.AppCtx = &cronadoCtx.AppContext{
+				Config: &config.Config{
+					CronLabelPrefix: tt.cronPrefix,
+				},
+			}
+
 			container := &Container{
 				ID:     "test-123",
 				Name:   "test-container",

@@ -3,12 +3,20 @@ log:
   level: "info"
   format: "text"
 cron_label_prefix: "cronado"
+# Minimum allowed interval for @every schedules (prevents DoS via rapid scheduling)
+min_schedule_interval: "1m"
+# Maximum allowed timeout for job execution
+max_timeout: "12h"
 daemon_watcher:
   enabled: true
   timeout_seconds: 5
 server:
   port: "8080"
   host: "127.0.0.1"
+  # Optional Bearer token for API and metrics endpoint authentication.
+  # When empty, authentication is disabled (default).
+  # Set via CRONADO_SERVER_API_TOKEN environment variable in production.
+  api_token: ""
 notify:
   interval_seconds: 3600
   email:
@@ -19,6 +27,8 @@ notify:
     password: ""
     from: ""
     to: []
+    # Require TLS for SMTP connections. Set to false only for local/test SMTP servers.
+    require_tls: true
   ntfy:
     enabled: false
     server: "https://ntfy.sh"

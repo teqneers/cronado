@@ -2,46 +2,59 @@ package notification
 
 import (
 	"fmt"
-	"net/smtp"
-	"strings"
+
+	mail "github.com/wneessen/go-mail"
 
 	appctx "github.com/teqneers/cronado/internal/context"
 )
 
 // SendEmail sends an email with the given subject and body if email notifications are enabled.
-// Throttles notifications per subject based on the NotifyIntervalSeconds setting.
+// Uses go-mail for proper MIME encoding, header injection prevention, and TLS support.
 func SendEmail(subject, body string) error {
 	cfg := appctx.AppCtx.Config.Notify.Email
 
-	// Check if email notifications are enabled
 	if !cfg.Enabled {
 		return nil
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.SMTPHost, cfg.SMTPPort)
+	msg := mail.NewMsg()
+	if err := msg.From(cfg.From); err != nil {
+		return fmt.Errorf("invalid from address: %w", err)
+	}
+	if err := msg.To(cfg.To...); err != nil {
+		return fmt.Errorf("invalid to address: %w", err)
+	}
+	msg.Subject(subject)
+	msg.SetBodyString(mail.TypeTextPlain, body)
 
-	// default to no auth if username and password are not provided
-	var auth smtp.Auth
+	// Determine TLS policy
+	tlsPolicy := mail.TLSOpportunistic
+	if cfg.RequireTLS {
+		tlsPolicy = mail.TLSMandatory
+	}
+
+	// Build client options
+	opts := []mail.Option{
+		mail.WithPort(cfg.SMTPPort),
+		mail.WithTLSPolicy(tlsPolicy),
+	}
+
+	// Add authentication if credentials are provided
 	if cfg.Username != "" && cfg.Password != "" {
-		auth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.SMTPHost)
+		opts = append(opts,
+			mail.WithSMTPAuth(mail.SMTPAuthPlain),
+			mail.WithUsername(cfg.Username),
+			mail.WithPassword(cfg.Password),
+		)
 	}
 
-	// Prepare email headers
-	header := make(map[string]string)
-	header["From"] = cfg.From
-	header["To"] = strings.Join(cfg.To, ",")
-	header["Subject"] = subject
-
-	var msg strings.Builder
-	for k, v := range header {
-		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
-	}
-
-	msg.WriteString("\r\n" + body)
-
-	err := smtp.SendMail(addr, auth, cfg.From, cfg.To, []byte(msg.String()))
+	client, err := mail.NewClient(cfg.SMTPHost, opts...)
 	if err != nil {
-		return err
+		return fmt.Errorf("email client creation failed: %w", err)
+	}
+
+	if err := client.DialAndSend(msg); err != nil {
+		return fmt.Errorf("email send failed: %w", err)
 	}
 
 	return nil

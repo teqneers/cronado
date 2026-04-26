@@ -14,7 +14,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o cronado main.go
 
-FROM alpine:latest
+FROM alpine:3
 
 ARG DOCKER_GID=999
 

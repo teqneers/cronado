@@ -2,7 +2,10 @@ module github.com/teqneers/cronado
 
 go 1.25.0
 
-require github.com/containerd/errdefs v1.0.0
+require (
+	github.com/containerd/errdefs v1.0.0
+	github.com/wneessen/go-mail v0.7.2
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

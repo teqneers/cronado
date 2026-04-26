@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 // Helper function to create a test container
@@ -100,7 +101,7 @@ func TestCronJobBuilder_SetEnabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			container := createTestContainer("test-123")
-			builder := NewCronJobBuilder("test-job", container)
+			builder := NewCronJobBuilder("test-job", container, 0, 0)
 			builder.SetEnabled(tt.input)
 
 			if tt.wantError {
@@ -203,7 +204,7 @@ func TestCronJobBuilder_SetSchedule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			container := createTestContainer("test-123")
-			builder := NewCronJobBuilder("test-job", container)
+			builder := NewCronJobBuilder("test-job", container, 0, 0)
 			builder.SetSchedule(tt.input)
 
 			if tt.wantError {
@@ -296,7 +297,7 @@ func TestCronJobBuilder_SetCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			container := createTestContainer("test-123")
-			builder := NewCronJobBuilder("test-job", container)
+			builder := NewCronJobBuilder("test-job", container, 0, 0)
 			builder.SetCommand(tt.input)
 
 			if tt.wantError {
@@ -346,7 +347,7 @@ func TestCronJobBuilder_SetUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			container := createTestContainer("test-123")
-			builder := NewCronJobBuilder("test-job", container)
+			builder := NewCronJobBuilder("test-job", container, 0, 0)
 			builder.SetUser(tt.input)
 
 			if builder.user != tt.wantUser {
@@ -360,7 +361,7 @@ func TestCronJobBuilder_Build(t *testing.T) {
 	container := createTestContainer("test-123")
 
 	t.Run("successful build", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("true")
 		builder.SetSchedule("@every 5m")
 		builder.SetCommand("echo hello")
@@ -402,7 +403,7 @@ func TestCronJobBuilder_Build(t *testing.T) {
 	})
 
 	t.Run("build with missing enabled", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetSchedule("@every 5m")
 		builder.SetCommand("echo hello")
 
@@ -416,7 +417,7 @@ func TestCronJobBuilder_Build(t *testing.T) {
 	})
 
 	t.Run("build with missing schedule", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("true")
 		builder.SetCommand("echo hello")
 
@@ -430,7 +431,7 @@ func TestCronJobBuilder_Build(t *testing.T) {
 	})
 
 	t.Run("build with missing command", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("true")
 		builder.SetSchedule("@every 5m")
 
@@ -444,7 +445,7 @@ func TestCronJobBuilder_Build(t *testing.T) {
 	})
 
 	t.Run("build with validation errors", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("invalid")
 		builder.SetSchedule("")
 		builder.SetCommand("")
@@ -468,7 +469,7 @@ func TestCronJobBuilder_IsValid(t *testing.T) {
 	container := createTestContainer("test-123")
 
 	t.Run("valid builder", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("true")
 		builder.SetSchedule("@every 5m")
 		builder.SetCommand("echo hello")
@@ -479,7 +480,7 @@ func TestCronJobBuilder_IsValid(t *testing.T) {
 	})
 
 	t.Run("invalid builder with errors", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 		builder.SetEnabled("invalid")
 
 		if builder.IsValid() {
@@ -488,7 +489,7 @@ func TestCronJobBuilder_IsValid(t *testing.T) {
 	})
 
 	t.Run("invalid builder missing fields", func(t *testing.T) {
-		builder := NewCronJobBuilder("test-job", container)
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
 
 		if builder.IsValid() {
 			t.Error("expected invalid, got valid")
@@ -498,7 +499,7 @@ func TestCronJobBuilder_IsValid(t *testing.T) {
 
 func TestCronJobBuilder_Reset(t *testing.T) {
 	container := createTestContainer("test-123")
-	builder := NewCronJobBuilder("test-job", container)
+	builder := NewCronJobBuilder("test-job", container, 0, 0)
 
 	// Set values
 	builder.SetEnabled("true")
@@ -533,7 +534,7 @@ func TestCronJobBuilder_Reset(t *testing.T) {
 
 func TestCronJobBuilder_GetErrors(t *testing.T) {
 	container := createTestContainer("test-123")
-	builder := NewCronJobBuilder("test-job", container)
+	builder := NewCronJobBuilder("test-job", container, 0, 0)
 
 	// Add multiple errors
 	builder.addError("error 1")
@@ -555,7 +556,7 @@ func TestCronJobBuilder_GetErrors(t *testing.T) {
 
 func TestCronJobBuilder_GetName(t *testing.T) {
 	container := createTestContainer("test-123")
-	builder := NewCronJobBuilder("my-test-job", container)
+	builder := NewCronJobBuilder("my-test-job", container, 0, 0)
 
 	if builder.GetName() != "my-test-job" {
 		t.Errorf("GetName() = %q, want %q", builder.GetName(), "my-test-job")
@@ -564,7 +565,7 @@ func TestCronJobBuilder_GetName(t *testing.T) {
 
 func TestCronJobBuilder_GetContainer(t *testing.T) {
 	container := createTestContainer("test-123")
-	builder := NewCronJobBuilder("test-job", container)
+	builder := NewCronJobBuilder("test-job", container, 0, 0)
 
 	if builder.GetContainer() != container {
 		t.Errorf("GetContainer() = %v, want %v", builder.GetContainer(), container)
@@ -589,7 +590,7 @@ func compareBoolPtr(a, b *bool) bool {
 // Test error accumulation
 func TestCronJobBuilder_ErrorAccumulation(t *testing.T) {
 	container := createTestContainer("test-123")
-	builder := NewCronJobBuilder("test-job", container)
+	builder := NewCronJobBuilder("test-job", container, 0, 0)
 
 	// Accumulate multiple errors
 	builder.SetEnabled("invalid")
@@ -637,7 +638,7 @@ func TestCronJobBuilder_IDGeneration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s-%s", tt.containerID, tt.jobName), func(t *testing.T) {
 			container := &Container{ID: tt.containerID}
-			builder := NewCronJobBuilder(tt.jobName, container)
+			builder := NewCronJobBuilder(tt.jobName, container, 0, 0)
 			builder.SetEnabled("true")
 			builder.SetSchedule("@every 1h")
 			builder.SetCommand("echo test")
@@ -652,4 +653,94 @@ func TestCronJobBuilder_IDGeneration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCronJobBuilder_MinScheduleInterval(t *testing.T) {
+	container := createTestContainer("test-123")
+	minInterval := time.Minute
+
+	t.Run("rejects @every below minimum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, minInterval, 0)
+		builder.SetSchedule("@every 10s")
+		if !builder.HasErrors() {
+			t.Error("expected error for schedule below minimum interval")
+		}
+	})
+
+	t.Run("accepts @every at minimum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, minInterval, 0)
+		builder.SetSchedule("@every 1m")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error: %v", builder.GetErrors())
+		}
+	})
+
+	t.Run("accepts @every above minimum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, minInterval, 0)
+		builder.SetSchedule("@every 5m")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error: %v", builder.GetErrors())
+		}
+	})
+
+	t.Run("rejects invalid @every duration", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, minInterval, 0)
+		builder.SetSchedule("@every notaduration")
+		if !builder.HasErrors() {
+			t.Error("expected error for invalid @every duration")
+		}
+	})
+
+	t.Run("allows @hourly regardless of minimum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, minInterval, 0)
+		builder.SetSchedule("@hourly")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error: %v", builder.GetErrors())
+		}
+	})
+
+	t.Run("disabled when minInterval is zero", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
+		builder.SetSchedule("@every 1s")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error when min interval disabled: %v", builder.GetErrors())
+		}
+	})
+}
+
+func TestCronJobBuilder_MaxTimeout(t *testing.T) {
+	container := createTestContainer("test-123")
+	maxTimeout := 12 * time.Hour
+
+	t.Run("rejects timeout above maximum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, 0, maxTimeout)
+		builder.SetTimeout("24h")
+		if !builder.HasErrors() {
+			t.Error("expected error for timeout above maximum")
+		}
+	})
+
+	t.Run("accepts timeout at maximum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, 0, maxTimeout)
+		builder.SetTimeout("12h")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error: %v", builder.GetErrors())
+		}
+	})
+
+	t.Run("accepts timeout below maximum", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, 0, maxTimeout)
+		builder.SetTimeout("30m")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error: %v", builder.GetErrors())
+		}
+	})
+
+	t.Run("disabled when maxTimeout is zero", func(t *testing.T) {
+		builder := NewCronJobBuilder("test-job", container, 0, 0)
+		builder.SetTimeout("9999h")
+		if builder.HasErrors() {
+			t.Errorf("unexpected error when max timeout disabled: %v", builder.GetErrors())
+		}
+	})
 }

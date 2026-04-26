@@ -11,7 +11,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 go build -o cronado main.go
 
-FROM alpine:latest
+FROM alpine:3
 
 WORKDIR /opt
 

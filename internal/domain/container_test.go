@@ -291,7 +291,6 @@ func TestContainer_GetLabelsWithPrefix(t *testing.T) {
 		"cronado.job2.enabled":  "false",
 		"cronado.job2.command":  "echo hello",
 		"other.label":           "value",
-		"cronado":               "base-value",
 		"cronado.":              "empty-suffix",
 		"app":                   "my-app",
 	}
