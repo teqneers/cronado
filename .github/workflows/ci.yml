@@ -10,6 +10,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # just in there because of an deprecation warning. remove once node24 is released natively
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   lint:
     name: Lint
