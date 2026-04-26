@@ -60,6 +60,7 @@ services:
       TZ: Europe/Berlin
       CRONADO_APP_NAME: cronado
       CRONADO_LOG_LEVEL: debug
+      CRONADO_MIN_SCHEDULE_INTERVAL: "1s"
       CRONADO_LOG_FORMAT: text
       CRONADO_SERVER_HOST: "0.0.0.0"
       CRONADO_DAEMON_WATCHER_ENABLED: "true"
@@ -71,6 +72,7 @@ services:
       CRONADO_NOTIFY_EMAIL_SMTP_PORT: 1025
       CRONADO_NOTIFY_EMAIL_USERNAME: ""
       CRONADO_NOTIFY_EMAIL_PASSWORD: ""
+      CRONADO_NOTIFY_EMAIL_REQUIRE_TLS: "false"
       CRONADO_NOTIFY_EMAIL_FROM: "cronado@example.com"
       CRONADO_NOTIFY_EMAIL_TO: "admin@example.com"
       # ntfy → local ntfy server (no auth needed)
