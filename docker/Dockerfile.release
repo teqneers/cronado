@@ -14,7 +14,8 @@ EXPOSE 8080
 
 ENV GIN_MODE=release
 
-COPY cronado ./
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/cronado ./
 
 LABEL org.opencontainers.image.source="https://github.com/teqneers/cronado"
 LABEL org.opencontainers.image.description="Lightweight cron job scheduler for Docker containers"

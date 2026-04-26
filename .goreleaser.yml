@@ -12,50 +12,26 @@ builds:
       - amd64
       - arm64
 
-dockers:
-  - image_templates:
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.source=https://github.com/teqneers/cronado"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.created={{.Date}}"
+dockers_v2:
+  - images:
+      - "ghcr.io/teqneers/cronado"
+    tags:
+      - "{{ .Tag }}"
+      - "v{{ .Major }}.{{ .Minor }}"
+      - "v{{ .Major }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
     dockerfile: docker/Dockerfile.release
-  - image_templates:
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.source=https://github.com/teqneers/cronado"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-    goarch: arm64
-    dockerfile: docker/Dockerfile.release
-
-docker_manifests:
-  - name_template: "ghcr.io/teqneers/cronado:{{ .Tag }}"
-    image_templates:
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
-  - name_template: "ghcr.io/teqneers/cronado:v{{ .Major }}.{{ .Minor }}"
-    image_templates:
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
-  - name_template: "ghcr.io/teqneers/cronado:v{{ .Major }}"
-    image_templates:
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
-  - name_template: "ghcr.io/teqneers/cronado:latest"
-    image_templates:
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-amd64"
-      - "ghcr.io/teqneers/cronado:{{ .Tag }}-arm64"
-    skip_push: "{{ if .Prerelease }}true{{ end }}"
+    labels:
+      "org.opencontainers.image.source": "https://github.com/teqneers/cronado"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.description": "Lightweight cron job scheduler for Docker containers"
+      "org.opencontainers.image.licenses": "MIT"
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
 changelog:

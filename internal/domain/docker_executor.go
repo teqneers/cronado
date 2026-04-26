@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -32,7 +31,6 @@ func NewDockerCommandExecutor(client DockerClient) *DockerCommandExecutor {
 // ExecuteCommand executes a command in a container and returns its output.
 func (e *DockerCommandExecutor) ExecuteCommand(container *Container, jobName, command, user string, timeout time.Duration) (string, string, error) {
 	if user == "" {
-		slog.Warn("No user specified, defaulting to 'root'", "container", container.DisplayName(), "command", command)
 		user = "root"
 	}
 

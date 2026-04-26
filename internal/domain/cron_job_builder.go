@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -107,6 +108,7 @@ func (b *CronJobBuilder) SetCommand(command string) {
 func (b *CronJobBuilder) SetUser(user string) {
 	user = strings.TrimSpace(user)
 	if user == "" {
+		slog.Warn("No user specified, defaulting to 'root'", "job", b.name, "container", b.container.DisplayName())
 		user = "root"
 	}
 	b.user = user
