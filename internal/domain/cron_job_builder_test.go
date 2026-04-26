@@ -1,7 +1,10 @@
 package domain
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -354,6 +357,39 @@ func TestCronJobBuilder_SetUser(t *testing.T) {
 				t.Errorf("user = %q, want %q", builder.user, tt.wantUser)
 			}
 		})
+	}
+}
+
+func TestCronJobBuilder_SetUser_WarnsOnDefault(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	original := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(original)
+
+	container := createTestContainer("test-123")
+
+	// Empty user should log a warning
+	builder := NewCronJobBuilder("warn-job", container, 0, 0)
+	builder.SetUser("")
+
+	if builder.user != "root" {
+		t.Errorf("user = %q, want %q", builder.user, "root")
+	}
+	if !strings.Contains(buf.String(), "No user specified") {
+		t.Errorf("expected warning log about default user, got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "warn-job") {
+		t.Errorf("expected job name in warning log, got %q", buf.String())
+	}
+
+	// Explicit user should not log a warning
+	buf.Reset()
+	builder2 := NewCronJobBuilder("no-warn-job", container, 0, 0)
+	builder2.SetUser("www-data")
+
+	if buf.Len() != 0 {
+		t.Errorf("expected no warning for explicit user, got %q", buf.String())
 	}
 }
 
