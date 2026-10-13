@@ -32,6 +32,9 @@ EXPOSE 8080
 
 ENV GIN_MODE=release
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["./cronado", "healthcheck"]
+
 COPY --from=go-builder /opt/cronado ./
 
 LABEL org.opencontainers.image.source="https://github.com/teqneers/cronado"

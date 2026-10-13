@@ -22,6 +22,7 @@ type MockScheduler struct {
 	started       bool
 	addFuncCalled int
 	removeCalled  int
+	next          time.Time
 }
 
 func NewMockScheduler() *MockScheduler {
@@ -73,7 +74,20 @@ func (m *MockScheduler) Stop() context.Context {
 }
 
 func (m *MockScheduler) Entries() []cron.Entry {
-	return []cron.Entry{} // Not needed for our tests
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entries := make([]cron.Entry, 0, len(m.entries))
+	for id := range m.entries {
+		entries = append(entries, cron.Entry{ID: id, Next: m.next})
+	}
+	return entries
+}
+
+// SetNext sets the next run time reported for every entry.
+func (m *MockScheduler) SetNext(next time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.next = next
 }
 
 // Helper methods for testing
@@ -138,7 +152,7 @@ func (m *MockCommandExecutor) ExecuteCommand(container *Container, jobName, comm
 	}
 
 	if m.shouldFail {
-		return "", "", errors.New("mock execution failed")
+		return m.stdout, m.stderr, errors.New("mock execution failed")
 	}
 
 	return m.stdout, m.stderr, nil
@@ -278,6 +292,7 @@ type MockNotificationService struct {
 	lastJobName            string
 	lastError              error
 	shouldFail             bool
+	lastOutput             string
 }
 
 func NewMockNotificationService() *MockNotificationService {
@@ -299,7 +314,7 @@ func (m *MockNotificationService) SendNotification(title, message string) error 
 	return nil
 }
 
-func (m *MockNotificationService) SendJobFailure(container *Container, jobName string, err error) error {
+func (m *MockNotificationService) SendJobFailure(container *Container, jobName string, err error, output string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -307,6 +322,7 @@ func (m *MockNotificationService) SendJobFailure(container *Container, jobName s
 	m.lastContainer = container
 	m.lastJobName = jobName
 	m.lastError = err
+	m.lastOutput = output
 
 	if m.shouldFail {
 		return errors.New("mock notification failed")

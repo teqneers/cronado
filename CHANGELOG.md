@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0] - Unreleased
 
+### Added
+
+- Failure notifications include the last 20 lines of the command output (`CRONADO_NOTIFY_INCLUDE_OUTPUT`, default `true`)
+- Webhook notifications with `generic`, `slack`, `discord` and `gotify` payload formats (`CRONADO_NOTIFY_WEBHOOK_*`)
+- `ping_url` label for Healthchecks.io-compatible start, success and failure pings
+- API returns `last_run`, `last_success`, `last_result`, `last_error`, `last_duration_seconds` and `next_run` per job
+- Prometheus metrics `cronado_job_last_run_timestamp_seconds`, `cronado_job_last_success_timestamp_seconds`, `cronado_job_next_run_timestamp_seconds` and `cronado_job_running`
+- Unauthenticated `GET /healthz` endpoint, `cronado healthcheck` command and Docker `HEALTHCHECK`
+
 ### Changed
 
 - **Breaking:** commands now run as the container's own `USER` when no `user` label is set (previously `root`). Add `cronado.<job>.user=root` to jobs that need root
