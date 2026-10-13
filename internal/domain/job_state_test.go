@@ -241,7 +241,10 @@ func TestIsInternalIP(t *testing.T) {
 	for addr, want := range map[string]bool{
 		"127.0.0.1": true, "10.1.2.3": true, "172.17.0.1": true, "192.168.1.10": true,
 		"169.254.169.254": true, "100.64.0.1": true, "0.0.0.0": true, "::1": true, "fd00::1": true,
-		"8.8.8.8": false, "2001:4860:4860::8888": false,
+		"198.18.0.1": true, "240.0.0.1": true, "255.255.255.255": true, "224.0.0.1": true,
+		"::ffff:127.0.0.1": true, "::ffff:10.0.0.1": true, "::127.0.0.1": true,
+		"64:ff9b::7f00:1": true, "2002:7f00:1::": true, "2001:0:4136:e378::1": true, "fe80::1": true,
+		"8.8.8.8": false, "1.1.1.1": false, "::ffff:8.8.8.8": false, "2001:4860:4860::8888": false,
 	} {
 		if got := isInternalIP(net.ParseIP(addr)); got != want {
 			t.Errorf("isInternalIP(%s) = %v, want %v", addr, got, want)
