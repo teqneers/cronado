@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"fmt"
-	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -64,15 +63,37 @@ var cronCmd = &cobra.Command{
 
 func startServer() {
 	cfg := context.AppCtx.Config.ServerConfig
-
 	router := api.SetupRouter()
 
-	// Start the server
-	address := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
-	log.Printf("Listening on http://%s\n", address)
-	if err := http.ListenAndServe(address, router); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	if cfg.APIToken == "" && !isLoopbackHost(cfg.Host) {
+		slog.Warn("API is reachable from the network without authentication; job commands are redacted. Set server.api_token (CRONADO_SERVER_API_TOKEN) to protect it",
+			"host", cfg.Host)
 	}
+
+	// Start the server
+	address := net.JoinHostPort(cfg.Host, cfg.Port)
+	srv := &http.Server{
+		Addr:              address,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	slog.Info("Listening", "address", "http://"+address)
+	if err := srv.ListenAndServe(); err != nil {
+		slog.Error("Failed to start server", "error", err)
+		os.Exit(1)
+	}
+}
+
+// isLoopbackHost reports whether host only accepts local connections.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Register the config command

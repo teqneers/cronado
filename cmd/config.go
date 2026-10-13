@@ -15,7 +15,7 @@ var configCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Configuration:")
 		fmt.Printf("App Name: %s\n", viper.GetString("app_name"))
-		fmt.Printf("Log Level: %s\n", viper.GetString("log_level"))
+		fmt.Printf("Log Level: %s\n", viper.GetString("log.level"))
 	},
 }
 

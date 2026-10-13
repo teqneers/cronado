@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -22,11 +24,19 @@ func BearerAuthMiddleware(token string) gin.HandlerFunc {
 			return
 		}
 
-		if strings.TrimPrefix(auth, "Bearer ") != token {
+		if !tokensEqual(strings.TrimPrefix(auth, "Bearer "), token) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 
 		c.Next()
 	}
+}
+
+// tokensEqual compares two tokens in constant time. Hashing first makes the
+// comparison independent of the token lengths as well.
+func tokensEqual(a, b string) bool {
+	ha := sha256.Sum256([]byte(a))
+	hb := sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(ha[:], hb[:]) == 1
 }

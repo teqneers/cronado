@@ -43,7 +43,7 @@ type CronJobManagerOptions struct {
 func NewCronJobManager(opts CronJobManagerOptions) *CronJobManager {
 	// Use default implementations if not provided
 	if opts.Scheduler == nil {
-		opts.Scheduler = &CronSchedulerAdapter{cron.New()}
+		opts.Scheduler = &CronSchedulerAdapter{cron.New(cron.WithParser(cronParser))}
 	}
 	if opts.Executor == nil {
 		opts.Executor = NewDockerCommandExecutor(GetDockerClient())
@@ -103,7 +103,7 @@ func (m *CronJobManager) addTyped(container *Container, job CronJob) error {
 		"cron_job", job.Name,
 		"schedule", job.Schedule,
 		"command", truncateForLog(job.Command, 80),
-		"user", job.User)
+		"user", displayUser(job.User))
 	slog.Debug("Cron job command detail", "job_id", jobID, "command", job.Command)
 
 	m.metrics.IncrementScheduledJobs()
@@ -194,6 +194,7 @@ func (m *CronJobManager) removeJobTyped(job CronJob) {
 	if _, exists := m.jobs[job.ID]; exists {
 		delete(m.jobs, job.ID)
 		m.metrics.DecrementScheduledJobs()
+		m.metrics.RemoveJobMetrics(job.GetShortContainerID(), job.Name)
 		slog.Info("Removed cron job",
 			"job_id", job.ID,
 			"container", job.GetShortContainerID(),
@@ -221,6 +222,7 @@ func (m *CronJobManager) Remove(containerID string) {
 			"cron_job", job.Name)
 		delete(m.jobs, jobID)
 		m.metrics.DecrementScheduledJobs()
+		m.metrics.RemoveJobMetrics(job.Container.ShortID(), job.Name)
 	}
 }
 
@@ -291,6 +293,14 @@ func (m *CronJobManager) GetJobCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.jobs)
+}
+
+// displayUser describes the user a job runs as, for log output.
+func displayUser(user string) string {
+	if user == "" {
+		return "(container default)"
+	}
+	return user
 }
 
 // truncateForLog shortens a string for log output, appending "..." if truncated.

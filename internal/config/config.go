@@ -113,9 +113,13 @@ func LoadConfig() *Config {
 	viper.SetDefault("metrics.enabled", true)
 	viper.SetDefault("metrics.endpoint", "/metrics")
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+	if configFile := viper.GetString("config"); configFile != "" {
+		viper.SetConfigFile(configFile)
+	} else {
+		viper.SetConfigName("config")
+		viper.SetConfigType("yaml")
+		viper.AddConfigPath(".")
+	}
 
 	viper.SetEnvPrefix("CRONADO")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

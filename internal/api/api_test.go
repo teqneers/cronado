@@ -182,3 +182,50 @@ func TestInvalidRoute_Returns404(t *testing.T) {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
+
+func getSingleJob(t *testing.T, router *gin.Engine, token string) domain.CronListItem {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/cron-job", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	var result []domain.CronListItem
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result))
+	}
+	return result[0]
+}
+
+func TestGetCronJobList_RedactsCommandWithoutToken(t *testing.T) {
+	manager := &mockCronJobManager{jobs: []domain.CronJob{
+		{ID: "abc-backup", Name: "backup", Command: "mysqldump -psecret db"},
+	}}
+	router := setupTestRouter(manager)
+
+	item := getSingleJob(t, router, "")
+	if item.CronJob.Command != RedactedCommand {
+		t.Errorf("expected redacted command, got %q", item.CronJob.Command)
+	}
+}
+
+func TestGetCronJobList_ShowsCommandWithToken(t *testing.T) {
+	manager := &mockCronJobManager{jobs: []domain.CronJob{
+		{ID: "abc-backup", Name: "backup", Command: "mysqldump -psecret db"},
+	}}
+	setupTestRouter(manager)
+	context.AppCtx.Config.ServerConfig.APIToken = "s3cret"
+	router := SetupRouter()
+
+	item := getSingleJob(t, router, "s3cret")
+	if item.CronJob.Command != "mysqldump -psecret db" {
+		t.Errorf("expected full command, got %q", item.CronJob.Command)
+	}
+}

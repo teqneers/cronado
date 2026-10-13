@@ -19,6 +19,12 @@ import (
 
 // InitializeAlreadyRunningContainers scans for already running containers and registers their cron jobs
 func InitializeAlreadyRunningContainers() {
+	_ = syncRunningContainers()
+}
+
+// syncRunningContainers registers the cron jobs of all running containers and
+// returns the IDs of those containers.
+func syncRunningContainers() map[string]bool {
 	runningFilter := filters.NewArgs(filters.Arg("status", "running"))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -30,16 +36,18 @@ func InitializeAlreadyRunningContainers() {
 	switch {
 	case errdefs.IsUnavailable(err):
 		slog.Error("Docker daemon unavailable, cannot list containers", "error", err)
-		return
+		return nil
 	case errdefs.IsDeadlineExceeded(err):
 		slog.Error("Container listing timed out", "error", err)
-		return
+		return nil
 	case err != nil:
 		slog.Error("Failed to list running containers", "error", err)
-		return
+		return nil
 	}
 
+	running := make(map[string]bool, len(containers))
 	for _, container := range containers {
+		running[container.ID] = true
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		containerObj, err := GetOrCreateContainer(ctx, container.ID)
 		cancel()
@@ -52,13 +60,87 @@ func InitializeAlreadyRunningContainers() {
 		}
 		handleContainer(containerObj)
 	}
+	return running
 }
 
-// StartEventListener listens for Docker container events and manages cron jobs accordingly
+// resyncAfterReconnect brings the registered jobs back in line with Docker
+// after events may have been missed while the event stream was down.
+func resyncAfterReconnect() {
+	running := syncRunningContainers()
+	if running == nil {
+		return
+	}
+	removed := make(map[string]bool)
+	for _, job := range GetCronJobManager().GetAllTyped() {
+		if job.Container == nil || running[job.Container.ID] || removed[job.Container.ID] {
+			continue
+		}
+		slog.Info("Container stopped while event stream was down, removing cron jobs", "container", job.GetContainerDisplayName())
+		GetCronJobManager().Remove(job.Container.ID)
+		removed[job.Container.ID] = true
+	}
+}
+
+// Event stream reconnect settings. After maxEventStreamFailures consecutive
+// failures the daemon is considered gone and cronado notifies and exits.
+const (
+	maxEventStreamFailures = 6
+	maxReconnectBackoff    = 30 * time.Second
+	stableStreamDuration   = 30 * time.Second
+)
+
+// StartEventListener listens for Docker container events and manages cron jobs
+// accordingly. A broken event stream is reconnected with backoff.
 func StartEventListener(stop chan os.Signal) {
-	eventFilter := filters.NewArgs(filters.Arg("type", "container"))
+	eventFilter := filters.NewArgs(
+		filters.Arg("type", "container"),
+		filters.Arg("event", string(events.ActionStart)),
+		filters.Arg("event", string(events.ActionDie)),
+		filters.Arg("event", string(events.ActionStop)),
+		filters.Arg("event", string(events.ActionDestroy)),
+	)
+
+	failures := 0
+	for {
+		connectedAt := time.Now()
+		err, stopped := listenForEvents(eventFilter, stop)
+		if stopped {
+			slog.Debug("Received shutdown signal, stopping event listener")
+			GetCronJobManager().Shutdown()
+			os.Exit(0)
+		}
+		if errdefs.IsCanceled(err) {
+			slog.Info("Docker event stream was canceled", "error", err)
+			return
+		}
+
+		if time.Since(connectedAt) >= stableStreamDuration {
+			failures = 0
+		}
+		failures++
+		if failures >= maxEventStreamFailures {
+			util.HandleDockerDaemonPanic(err)
+		}
+
+		backoff := min(time.Duration(1<<(failures-1))*time.Second, maxReconnectBackoff)
+		slog.Warn("Docker event stream failed, reconnecting", "error", err, "attempt", failures, "backoff", backoff)
+		select {
+		case <-time.After(backoff):
+		case <-stop:
+			GetCronJobManager().Shutdown()
+			os.Exit(0)
+		}
+		resyncAfterReconnect()
+	}
+}
+
+// listenForEvents consumes one event stream until it fails or a stop signal
+// arrives. It returns the stream error, or stopped=true on shutdown.
+func listenForEvents(eventFilter filters.Args, stop chan os.Signal) (err error, stopped bool) {
 	// Events stream should not timeout - it's a long-running connection
-	eventsChan, errChan := GetDockerClient().Events(context.Background(), events.ListOptions{
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eventsChan, errChan := GetDockerClient().Events(ctx, events.ListOptions{
 		Filters: eventFilter,
 	})
 
@@ -67,21 +149,9 @@ func StartEventListener(stop chan os.Signal) {
 		case event := <-eventsChan:
 			handleDockerEvent(event)
 		case err := <-errChan:
-			switch {
-			case errdefs.IsUnavailable(err):
-				slog.Error("Docker daemon unavailable", "error", err)
-				util.HandleDockerDaemonPanic(err)
-			case errdefs.IsCanceled(err):
-				slog.Info("Docker event stream was canceled", "error", err)
-				return
-			default:
-				slog.Error("Error receiving Docker events", "error", err)
-				util.HandleDockerDaemonPanic(err)
-			}
+			return err, false
 		case <-stop:
-			slog.Debug("Received shutdown signal, stopping event listener")
-			GetCronJobManager().Shutdown()
-			os.Exit(0)
+			return nil, true
 		}
 	}
 }

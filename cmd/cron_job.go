@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/teqneers/cronado/internal/context"
@@ -23,21 +25,33 @@ var cronJobListCmd = &cobra.Command{
 	Long:  "List all cron-jobs",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := context.AppCtx.Config
-
-		resp, err := http.Get(fmt.Sprintf("http://%s:%s/api/cron-job", cfg.ServerConfig.Host, cfg.ServerConfig.Port))
+		url := fmt.Sprintf("http://%s/api/cron-job", net.JoinHostPort(cfg.ServerConfig.Host, cfg.ServerConfig.Port))
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			log.Fatalf("Failed to create request: %v", err)
+		}
+		if cfg.ServerConfig.APIToken != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.ServerConfig.APIToken)
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalf("Failed to fetch cron jobs: %v", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		if resp.StatusCode == http.StatusNoContent {
-			fmt.Println("No active cron jobs.")
-			return
+		if resp.StatusCode != http.StatusOK {
+			log.Fatalf("Failed to fetch cron jobs: %s", resp.Status)
 		}
 
 		var jobs []domain.CronListItem
 		if err := json.NewDecoder(resp.Body).Decode(&jobs); err != nil {
 			log.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if len(jobs) == 0 {
+			fmt.Println("No active cron jobs.")
+			return
 		}
 
 		fmt.Println("Active Container Cron Jobs:")

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/teqneers/cronado/internal/metrics"
 )
 
@@ -10,6 +11,7 @@ type MetricsCollector interface {
 	DecrementScheduledJobs()
 	RecordJobExecution(containerID, jobName, status string)
 	RecordJobDuration(containerID, jobName string, duration float64)
+	RemoveJobMetrics(containerID, jobName string)
 }
 
 // PrometheusMetricsCollector adapts the metrics package to the MetricsCollector interface
@@ -45,5 +47,16 @@ func (c *PrometheusMetricsCollector) RecordJobExecution(containerID, jobName, st
 func (c *PrometheusMetricsCollector) RecordJobDuration(containerID, jobName string, duration float64) {
 	if metrics.JobExecDuration != nil {
 		metrics.JobExecDuration.WithLabelValues(containerID, jobName).Observe(duration)
+	}
+}
+
+// RemoveJobMetrics deletes all series of a removed job, so recreated
+// containers do not leave stale series behind.
+func (c *PrometheusMetricsCollector) RemoveJobMetrics(containerID, jobName string) {
+	if metrics.JobExecCounter != nil {
+		metrics.JobExecCounter.DeletePartialMatch(prometheus.Labels{"container_id": containerID, "job_name": jobName})
+	}
+	if metrics.JobExecDuration != nil {
+		metrics.JobExecDuration.DeleteLabelValues(containerID, jobName)
 	}
 }

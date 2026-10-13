@@ -28,7 +28,14 @@ func (s *DefaultNotificationService) SendNotification(title, message string) err
 
 // SendJobFailure sends a notification about a job failure
 func (s *DefaultNotificationService) SendJobFailure(container *Container, jobName string, err error) error {
-	title := fmt.Sprintf("Cron Job Failed: %s", jobName)
+	// The title doubles as the throttle key, so it must identify the container
+	// too: otherwise a failing job in one container would silence alerts for a
+	// same-named job in another.
+	containerName := container.Name
+	if containerName == "" {
+		containerName = container.ShortID()
+	}
+	title := fmt.Sprintf("Cron Job Failed: %s on %s", jobName, containerName)
 	message := fmt.Sprintf("Job '%s' failed in container '%s': %v",
 		jobName, container.DisplayName(), err)
 

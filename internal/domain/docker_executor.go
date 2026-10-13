@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -28,24 +30,41 @@ func NewDockerCommandExecutor(client DockerClient) *DockerCommandExecutor {
 	}
 }
 
+// maxOutputBytes caps how much stdout/stderr is kept per execution. Only the
+// tail is kept, since the end of the output usually explains a failure.
+const maxOutputBytes = 64 * 1024
+
+// killGrace is the extra time given to the in-container `timeout` wrapper to
+// kill the command and close the stream before cronado gives up waiting.
+const killGrace = 10 * time.Second
+
+// timeoutWrapper runs the command under `timeout -s KILL` when the container
+// provides it (busybox and coreutils both do), so a timed-out command is
+// actually stopped instead of running on after cronado stops listening.
+// $1 is the timeout in seconds, $2 the command.
+const timeoutWrapper = `if command -v timeout >/dev/null 2>&1; then exec timeout -s KILL "$1" sh -c "$2"; fi; exec sh -c "$2"`
+
+// exitCodeKilled is the exit code of a command killed by SIGKILL.
+const exitCodeKilled = 137
+
 // ExecuteCommand executes a command in a container and returns its output.
+// An empty user runs the command as the container's configured user.
 func (e *DockerCommandExecutor) ExecuteCommand(container *Container, jobName, command, user string, timeout time.Duration) (string, string, error) {
-	if user == "" {
-		user = "root"
+	if timeout <= 0 {
+		timeout = DefaultTimeout
 	}
+	timeoutSecs := int(math.Ceil(timeout.Seconds()))
 
 	execConfig := dockercontainer.ExecOptions{
-		Cmd:          []string{"sh", "-c", command},
+		Cmd:          []string{"sh", "-c", timeoutWrapper, "cronado", strconv.Itoa(timeoutSecs), command},
 		AttachStdout: true,
 		AttachStderr: true,
 		User:         user,
 		Tty:          false,
 	}
 
-	if timeout <= 0 {
-		timeout = DefaultTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	startTime := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+killGrace)
 	defer cancel()
 
 	execID, err := e.client.ContainerExecCreate(ctx, container.ID, execConfig)
@@ -64,11 +83,15 @@ func (e *DockerCommandExecutor) ExecuteCommand(container *Container, jobName, co
 	}
 	defer resp.Close()
 
-	// Read the output into local buffers (thread-safe)
-	var stdoutBuf, stderrBuf bytes.Buffer
-	_, err = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, resp.Reader)
+	// Read the output into local, size-capped buffers (thread-safe)
+	stdoutBuf := newTailBuffer(maxOutputBytes)
+	stderrBuf := newTailBuffer(maxOutputBytes)
+	_, err = stdcopy.StdCopy(stdoutBuf, stderrBuf, resp.Reader)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read exec output: %w", err)
+		if ctx.Err() != nil {
+			return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("command timed out after %s and could not be stopped (no `timeout` binary in container?)", timeout)
+		}
+		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("failed to read exec output: %w", err)
 	}
 
 	// Check the exit code
@@ -80,9 +103,40 @@ func (e *DockerCommandExecutor) ExecuteCommand(container *Container, jobName, co
 		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("failed to inspect exec instance: %w", err)
 	}
 
+	if inspect.ExitCode == exitCodeKilled && time.Since(startTime) >= timeout {
+		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("command timed out after %s and was killed", timeout)
+	}
 	if inspect.ExitCode != 0 {
 		return stdoutBuf.String(), stderrBuf.String(), fmt.Errorf("command exited with code %d", inspect.ExitCode)
 	}
 
 	return stdoutBuf.String(), stderrBuf.String(), nil
+}
+
+// tailBuffer is an io.Writer that keeps only the last limit bytes written.
+type tailBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func newTailBuffer(limit int) *tailBuffer {
+	return &tailBuffer{limit: limit}
+}
+
+// Write never fails, so the stream is always drained even when output is dropped.
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.buf.Write(p)
+	if over := t.buf.Len() - t.limit; over > 0 {
+		t.buf.Next(over)
+		t.truncated = true
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string {
+	if t.truncated {
+		return "[output truncated]\n" + t.buf.String()
+	}
+	return t.buf.String()
 }
