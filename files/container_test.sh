@@ -87,7 +87,8 @@ for j in jobs:
     if j.get('cron_job',{}).get('name') == 'test-cron':
         cj = j['cron_job']
         assert cj['schedule'] == '@every 3s', f\"schedule: {cj['schedule']}\"
-        assert cj['command'] == 'echo hello-from-test', f\"command: {cj['command']}\"
+        # no API token configured, so commands are redacted
+        assert cj['command'].startswith('[redacted'), f\"command: {cj['command']}\"
         assert cj['user'] == 'root', f\"user: {cj['user']}\"
         assert cj['enabled'] == True, f\"enabled: {cj['enabled']}\"
         print('OK')
