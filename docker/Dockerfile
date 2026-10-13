@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS go-builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -20,7 +20,7 @@ ARG DOCKER_GID=999
 
 WORKDIR /opt
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata
 
 RUN addgroup -S app \
     && adduser -S -G app app \
