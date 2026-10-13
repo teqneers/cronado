@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - Unreleased
+
+### Changed
+
+- **Breaking:** commands now run as the container's own `USER` when no `user` label is set (previously `root`). Add `cronado.<job>.user=root` to jobs that need root
+- Without `server.api_token`, job commands are redacted in `/api/cron-job` responses, and a warning is logged at startup when the server listens on a non-loopback address
+- A broken Docker event stream is now reconnected with backoff and the job list resynced, instead of exiting immediately. Cronado still notifies and exits if Docker stays unreachable for about a minute
+- Cronado only subscribes to container start, stop, die and destroy events
+- Failure notification titles now include the container name (`Cron Job Failed: <job> on <container>`)
+
+### Security
+
+- Commands that exceed their timeout are now killed inside the container (`timeout -s KILL`); previously they kept running while the next run started
+- Captured command output is capped at 64 KiB per stream to prevent memory exhaustion
+- `min_schedule_interval` now also applies to 6-field schedules with a seconds field
+- API token comparison is constant-time
+- HTTP server now has read, write and idle timeouts
+- Failure notifications are throttled per job and container, so a same-named job in another container can no longer suppress alerts
+- CI grants `packages: write` only to the nightly image job
+- SECURITY.md: vulnerabilities are now reported via private GitHub Security Advisories
+
+### Fixed
+
+- 6-field schedules (with seconds) passed validation but were never registered
+- Invalid cron expressions (e.g. `99 * * * *`) are now rejected when labels are parsed, with the parser's error message
+- `--config` flag was ignored
+- `cronado cron-job list` now sends the API token and reports HTTP errors
+- `cronado config` printed an empty log level
+- Prometheus series of removed jobs are deleted instead of accumulating
+- ntfy error responses are read with a size limit
+
 ## [1.0.4] - 2026-10-13
 
 ### Security

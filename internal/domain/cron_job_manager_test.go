@@ -182,6 +182,7 @@ type MockMetricsCollector struct {
 	incrementCalled       int
 	decrementCalled       int
 	recordExecutionCalled int
+	removeMetricsCalled   int
 	recordDurationCalled  int
 	lastContainerID       string
 	lastJobName           string
@@ -212,6 +213,12 @@ func (m *MockMetricsCollector) RecordJobExecution(containerID, jobName, status s
 	m.lastContainerID = containerID
 	m.lastJobName = jobName
 	m.lastStatus = status
+}
+
+func (m *MockMetricsCollector) RemoveJobMetrics(containerID, jobName string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removeMetricsCalled++
 }
 
 func (m *MockMetricsCollector) RecordJobDuration(containerID, jobName string, duration float64) {

@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please [open a GitHub issue](https://github.com/teqneers/cronado/issues/new) with the label `security`.
+If you discover a security vulnerability, please report it privately via [GitHub Security Advisories](https://github.com/teqneers/cronado/security/advisories/new). Please do not open a public issue.
 
 Please include:
 - Description of the vulnerability
@@ -15,8 +15,8 @@ Please include:
 
 Cronado requires access to the **Docker socket** (`/var/run/docker.sock`) to function. This is a privileged operation. Users should:
 
-- Mount the socket as **read-only** where possible (`/var/run/docker.sock:/var/run/docker.sock:ro`)
-- Consider using a [Docker socket proxy](https://github.com/Tecnativa/docker-socket-proxy) to limit API access
+- Treat Cronado as **root-equivalent on the host**. Mounting the socket read-only (`:ro`) does not restrict the Docker API; it only prevents replacing the socket file.
+- A [Docker socket proxy](https://github.com/Tecnativa/docker-socket-proxy) gives limited protection, because Cronado needs the `CONTAINERS`, `EXEC` and `POST` permissions
 - Run Cronado in a dedicated, minimal container
 
 ### Command Execution
@@ -25,11 +25,15 @@ Commands defined in container labels are executed via `docker exec` using `sh -c
 
 ### Default User
 
-Commands execute as `root` by default if no `user` label is specified. A warning is logged when this happens. Always set the `user` label explicitly to run commands with least privilege:
+Commands run as the **container's own configured user** (its `USER`) when no `user` label is specified. To run a command as a different user, for example root, set it explicitly:
 
 ```
-cronado.my-job.user=nobody
+cronado.my-job.user=root
 ```
+
+### Timeouts
+
+A command that exceeds its timeout is killed inside the container with `timeout -s KILL` (available in busybox and coreutils images). Command output kept by Cronado is capped at 64 KiB per stream.
 
 ### Credentials
 
@@ -58,7 +62,7 @@ server:
 curl -H "Authorization: Bearer your-secret-token" http://localhost:8080/api/cron-job
 ```
 
-When `api_token` is empty (default), authentication is disabled and all requests pass through. This preserves backwards compatibility.
+When `api_token` is empty (default), authentication is disabled and all requests pass through. In that case job commands are **redacted** in API responses, because they often contain credentials, and Cronado logs a warning at startup if the server listens on a non-loopback address.
 
 For production deployments, you can also place a reverse proxy (e.g., nginx, Traefik) with its own authentication in front of Cronado.
 
@@ -72,7 +76,7 @@ export CRONADO_NOTIFY_EMAIL_REQUIRE_TLS=false
 
 ### Schedule Rate Limiting
 
-The `min_schedule_interval` setting (default `1m`) prevents excessively frequent `@every` schedules that could cause resource exhaustion. To override:
+The `min_schedule_interval` setting (default `1m`) prevents excessively frequent schedules that could cause resource exhaustion. It applies to `@every` schedules and to 6-field expressions with a seconds field. To override:
 
 ```bash
 export CRONADO_MIN_SCHEDULE_INTERVAL="10s"

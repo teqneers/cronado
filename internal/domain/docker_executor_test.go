@@ -22,6 +22,7 @@ type MockDockerClient struct {
 	execCreateResp  dockercontainer.ExecCreateResponse
 	execCreateErr   error
 	execCreateCalls int
+	lastExecOptions dockercontainer.ExecOptions
 
 	execAttachResp types.HijackedResponse
 	execAttachErr  error
@@ -41,8 +42,9 @@ func (m *MockDockerClient) ContainerInspect(_ context.Context, _ string) (docker
 	return m.inspectResult, m.inspectErr
 }
 
-func (m *MockDockerClient) ContainerExecCreate(_ context.Context, _ string, _ dockercontainer.ExecOptions) (dockercontainer.ExecCreateResponse, error) {
+func (m *MockDockerClient) ContainerExecCreate(_ context.Context, _ string, opts dockercontainer.ExecOptions) (dockercontainer.ExecCreateResponse, error) {
 	m.execCreateCalls++
+	m.lastExecOptions = opts
 	return m.execCreateResp, m.execCreateErr
 }
 
@@ -297,5 +299,59 @@ func TestDockerCommandExecutor_DefaultTimeoutWhenNegative(t *testing.T) {
 	_, _, err := executor.ExecuteCommand(container, "test-job", "echo hello", "root", -1*time.Second)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestDockerCommandExecutor_ExecOptions(t *testing.T) {
+	container := &Container{ID: "abc123456789", Name: "test-container"}
+	mockClient := &MockDockerClient{
+		execCreateResp:    dockercontainer.ExecCreateResponse{ID: "exec-123"},
+		execAttachResp:    createMockHijackedResponse(nil),
+		execInspectResult: dockercontainer.ExecInspect{ExitCode: 0},
+	}
+	executor := NewDockerCommandExecutor(mockClient)
+
+	if _, _, err := executor.ExecuteCommand(container, "test-job", "echo hello", "", 90*time.Second); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	opts := mockClient.lastExecOptions
+	if opts.User != "" {
+		t.Errorf("User = %q, want empty (container default)", opts.User)
+	}
+	want := []string{"sh", "-c", timeoutWrapper, "cronado", "90", "echo hello"}
+	if strings.Join(opts.Cmd, "|") != strings.Join(want, "|") {
+		t.Errorf("Cmd = %q, want %q", opts.Cmd, want)
+	}
+}
+
+func TestDockerCommandExecutor_TimeoutKilled(t *testing.T) {
+	container := &Container{ID: "abc123456789", Name: "test-container"}
+	mockClient := &MockDockerClient{
+		execCreateResp:    dockercontainer.ExecCreateResponse{ID: "exec-123"},
+		execAttachResp:    createMockHijackedResponse(nil),
+		execInspectResult: dockercontainer.ExecInspect{ExitCode: exitCodeKilled},
+	}
+	executor := NewDockerCommandExecutor(mockClient)
+
+	// A sub-millisecond timeout has always elapsed by the time the exit code is checked.
+	_, _, err := executor.ExecuteCommand(container, "test-job", "sleep 100", "", time.Nanosecond)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected timeout error, got %v", err)
+	}
+}
+
+func TestTailBuffer_KeepsTail(t *testing.T) {
+	buf := newTailBuffer(10)
+	_, _ = buf.Write([]byte("0123456789"))
+	if buf.String() != "0123456789" {
+		t.Fatalf("String() = %q", buf.String())
+	}
+	n, err := buf.Write([]byte("abcde"))
+	if n != 5 || err != nil {
+		t.Fatalf("Write() = %d, %v; want 5, nil", n, err)
+	}
+	if got, want := buf.String(), "[output truncated]\n56789abcde"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
 }

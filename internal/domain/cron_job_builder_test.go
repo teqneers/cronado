@@ -1,12 +1,11 @@
 package domain
 
 import (
-	"bytes"
 	"fmt"
-	"log/slog"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 // Helper function to create a test container
@@ -197,6 +196,18 @@ func TestCronJobBuilder_SetSchedule(t *testing.T) {
 			wantError:    true,
 		},
 		{
+			name:         "invalid field value",
+			input:        "99 * * * *",
+			wantSchedule: "",
+			wantError:    true,
+		},
+		{
+			name:         "CRON_TZ prefix",
+			input:        "CRON_TZ=Europe/Berlin 0 2 * * *",
+			wantSchedule: "CRON_TZ=Europe/Berlin 0 2 * * *",
+			wantError:    false,
+		},
+		{
 			name:         "invalid cron expression (too many fields)",
 			input:        "0 0 0 * * * *",
 			wantSchedule: "",
@@ -336,14 +347,14 @@ func TestCronJobBuilder_SetUser(t *testing.T) {
 			wantUser: "www-data",
 		},
 		{
-			name:     "empty defaults to root",
+			name:     "empty uses container default",
 			input:    "",
-			wantUser: "root",
+			wantUser: "",
 		},
 		{
-			name:     "whitespace only defaults to root",
+			name:     "whitespace only uses container default",
 			input:    "   ",
-			wantUser: "root",
+			wantUser: "",
 		},
 	}
 
@@ -357,39 +368,6 @@ func TestCronJobBuilder_SetUser(t *testing.T) {
 				t.Errorf("user = %q, want %q", builder.user, tt.wantUser)
 			}
 		})
-	}
-}
-
-func TestCronJobBuilder_SetUser_WarnsOnDefault(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	original := slog.Default()
-	slog.SetDefault(logger)
-	defer slog.SetDefault(original)
-
-	container := createTestContainer("test-123")
-
-	// Empty user should log a warning
-	builder := NewCronJobBuilder("warn-job", container, 0, 0)
-	builder.SetUser("")
-
-	if builder.user != "root" {
-		t.Errorf("user = %q, want %q", builder.user, "root")
-	}
-	if !strings.Contains(buf.String(), "No user specified") {
-		t.Errorf("expected warning log about default user, got %q", buf.String())
-	}
-	if !strings.Contains(buf.String(), "warn-job") {
-		t.Errorf("expected job name in warning log, got %q", buf.String())
-	}
-
-	// Explicit user should not log a warning
-	buf.Reset()
-	builder2 := NewCronJobBuilder("no-warn-job", container, 0, 0)
-	builder2.SetUser("www-data")
-
-	if buf.Len() != 0 {
-		t.Errorf("expected no warning for explicit user, got %q", buf.String())
 	}
 }
 
@@ -557,8 +535,8 @@ func TestCronJobBuilder_Reset(t *testing.T) {
 	if builder.command != "" {
 		t.Errorf("command should be empty after reset, got %q", builder.command)
 	}
-	if builder.user != "root" {
-		t.Errorf("user should be 'root' after reset, got %q", builder.user)
+	if builder.user != "" {
+		t.Errorf("user should be empty after reset, got %q", builder.user)
 	}
 	if builder.hasErrors {
 		t.Error("hasErrors should be false after reset")
@@ -779,4 +757,44 @@ func TestCronJobBuilder_MaxTimeout(t *testing.T) {
 			t.Errorf("unexpected error when max timeout disabled: %v", builder.GetErrors())
 		}
 	})
+}
+
+func TestCronJobBuilder_SetSchedule_SecondsFieldMinInterval(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantError bool
+	}{
+		{name: "every second", input: "* * * * * *", wantError: true},
+		{name: "every 10 seconds", input: "*/10 * * * * *", wantError: true},
+		{name: "twice a minute", input: "0,30 * * * * *", wantError: true},
+		{name: "once a minute at second 15", input: "15 * * * * *", wantError: false},
+		{name: "hourly with seconds", input: "0 0 * * * *", wantError: false},
+		{name: "every minute (5 fields)", input: "* * * * *", wantError: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewCronJobBuilder("test-job", createTestContainer("test-123"), time.Minute, 0)
+			builder.SetSchedule(tt.input)
+			if builder.HasErrors() != tt.wantError {
+				t.Errorf("HasErrors() = %v, want %v (errors: %v)", builder.HasErrors(), tt.wantError, builder.GetErrors())
+			}
+		})
+	}
+}
+
+func TestCronJobBuilder_SetSchedule_AcceptedSchedulesRegister(t *testing.T) {
+	// Every schedule the builder accepts must also be accepted by the scheduler.
+	for _, schedule := range []string{"0 * * * *", "15 * * * * *", "@hourly", "@every 5m", "CRON_TZ=UTC 0 2 * * *"} {
+		builder := NewCronJobBuilder("test-job", createTestContainer("test-123"), time.Minute, 0)
+		builder.SetSchedule(schedule)
+		if builder.HasErrors() {
+			t.Fatalf("builder rejected %q: %v", schedule, builder.GetErrors())
+		}
+		scheduler := &CronSchedulerAdapter{cron.New(cron.WithParser(cronParser))}
+		if _, err := scheduler.AddFunc(schedule, func() {}); err != nil {
+			t.Errorf("scheduler rejected %q: %v", schedule, err)
+		}
+	}
 }

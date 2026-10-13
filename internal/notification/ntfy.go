@@ -40,7 +40,7 @@ func SendNtfy(subject, body string) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(resp.Body)
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("ntfy unexpected status %d: %s", resp.StatusCode, string(data))
 	}
 

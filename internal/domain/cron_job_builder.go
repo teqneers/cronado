@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 )
@@ -39,7 +38,6 @@ func NewCronJobBuilder(name string, container *Container, minScheduleInterval, m
 	return &CronJobBuilder{
 		name:                name,
 		container:           container,
-		user:                "root", // default user
 		timeout:             DefaultTimeout,
 		minScheduleInterval: minScheduleInterval,
 		maxTimeout:          maxTimeout,
@@ -69,7 +67,6 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 		return
 	}
 
-	// Basic validation - check if it looks like a cron expression or @every/@hourly/etc. syntax
 	if strings.HasPrefix(schedule, "@every ") {
 		// Validate interval duration and enforce minimum
 		durationStr := strings.TrimPrefix(schedule, "@every ")
@@ -82,10 +79,21 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 			b.addError(fmt.Sprintf("schedule interval %s is below minimum %s", d, b.minScheduleInterval))
 			return
 		}
-	} else if !strings.HasPrefix(schedule, "@") {
-		parts := strings.Fields(schedule)
-		if len(parts) < 5 || len(parts) > 6 {
-			b.addError(fmt.Sprintf("invalid cron schedule format: %s (expected 5 or 6 fields)", schedule))
+	}
+
+	// Parse with the scheduler's own parser so that every accepted schedule
+	// can actually be registered.
+	parsed, err := cronParser.Parse(schedule)
+	if err != nil {
+		b.addError(fmt.Sprintf("invalid cron schedule %q: %v", schedule, err))
+		return
+	}
+
+	// A seconds field allows sub-minute schedules, so check the real gap
+	// between runs against the configured minimum.
+	if b.minScheduleInterval > 0 {
+		if gap := shortestInterval(parsed, time.Now()); gap > 0 && gap < b.minScheduleInterval {
+			b.addError(fmt.Sprintf("schedule %q runs every %s, below minimum %s", schedule, gap, b.minScheduleInterval))
 			return
 		}
 	}
@@ -104,14 +112,10 @@ func (b *CronJobBuilder) SetCommand(command string) {
 	b.command = command
 }
 
-// SetUser sets the user with default fallback
+// SetUser sets the user the command runs as. An empty value keeps the
+// default, which is the container's own configured user.
 func (b *CronJobBuilder) SetUser(user string) {
-	user = strings.TrimSpace(user)
-	if user == "" {
-		slog.Warn("No user specified, defaulting to 'root'", "job", b.name, "container", b.container.DisplayName())
-		user = "root"
-	}
-	b.user = user
+	b.user = strings.TrimSpace(user)
 }
 
 // SetTimeout sets the command execution timeout (e.g. "30s", "5m", "1h")
@@ -204,7 +208,7 @@ func (b *CronJobBuilder) Reset() {
 	b.enabled = nil
 	b.schedule = ""
 	b.command = ""
-	b.user = "root"
+	b.user = ""
 	b.timeout = DefaultTimeout
 	b.hasErrors = false
 	b.errors = []string{}

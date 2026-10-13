@@ -148,7 +148,8 @@ Cronado supports standard cron expressions and convenience shortcuts:
 | Format        | Example        | Description            |
 |---------------|----------------|------------------------|
 | Standard cron | `0 2 * * *`    | Daily at 2:00 AM       |
-| 6-field cron  | `0 30 * * * *` | Every hour at :30      |
+| 6-field cron  | `0 30 * * * *` | Every hour at :30 (first field is seconds) |
+| Time zone     | `CRON_TZ=Europe/Berlin 0 2 * * *` | Daily at 2:00 AM Berlin time |
 | `@every`      | `@every 5m`    | Every 5 minutes        |
 | `@hourly`     | `@hourly`      | Every hour             |
 | `@daily`      | `@daily`       | Once a day at midnight |
@@ -162,7 +163,7 @@ Cronado supports standard cron expressions and convenience shortcuts:
 | `enabled`  | Yes      | —       | Enable/disable the job (`true`/`false`)      |
 | `schedule` | Yes      | —       | Cron expression or `@every` interval         |
 | `cmd`      | Yes      | —       | Command to execute inside the container      |
-| `user`     | No       | `root`  | User to run the command as                   |
+| `user`     | No       | container's `USER` | User to run the command as        |
 | `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
 
 ## Configuration
@@ -222,7 +223,7 @@ When a token is configured, all requests to `/api/*` and `/metrics` must include
 curl -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job
 ```
 
-When no token is set (the default), authentication is disabled and all endpoints are open. For network-exposed deployments, either set a token or place Cronado behind a reverse proxy with its own authentication.
+When no token is set (the default), authentication is disabled and all endpoints are open. Job commands are then redacted in API responses, and Cronado logs a warning at startup if it listens on a non-loopback address. For network-exposed deployments, either set a token or place Cronado behind a reverse proxy with its own authentication.
 
 ### List Active Jobs
 
@@ -362,18 +363,18 @@ If running as a non-root user on the host, you may need to add the user to the `
 
 ### Commands timing out
 
-The default timeout is 30 seconds. For long-running commands, set a per-job timeout:
+The default timeout is 30 seconds. A command that exceeds its timeout is killed inside the container. For long-running commands, set a per-job timeout:
 
 ```
 cronado.my-job.timeout=10m
 ```
 
-### Default root user
+### Permission denied after upgrading to 1.1
 
-Commands run as `root` by default. Set the `user` label explicitly to use least privilege:
+Since 1.1.0, commands run as the container's own `USER` instead of `root` when no `user` label is set. If a job needs root, set it explicitly:
 
 ```
-cronado.my-job.user=nobody
+cronado.my-job.user=root
 ```
 
 
@@ -383,7 +384,10 @@ Cronado includes several built-in security measures:
 
 - **API authentication** -- optional Bearer token protects `/api/*` and `/metrics` endpoints
 - **TLS-enforced email** -- SMTP notifications use mandatory TLS by default (configurable via `CRONADO_NOTIFY_EMAIL_REQUIRE_TLS`)
-- **Schedule rate limiting** -- `@every` schedules are rejected if below the minimum interval (default 1 minute), preventing accidental DoS
+- **Least privilege by default** -- commands run as the container's own `USER` unless a `user` label says otherwise
+- **Command redaction in the API** -- without an API token, job commands are not returned by `/api/cron-job`
+- **Schedule rate limiting** -- `@every` and seconds-based schedules are rejected if they run more often than the minimum interval (default 1 minute), preventing accidental DoS
+- **Enforced timeouts** -- commands that exceed their timeout are killed inside the container, and captured output is capped at 64 KiB
 - **Timeout cap** -- job timeouts are capped at a configurable maximum (default 12 hours) to prevent runaway executions
 - **Job name validation** -- only alphanumeric characters, hyphens, and underscores are accepted in job names
 - **Command log redaction** -- commands are truncated in INFO logs to avoid leaking credentials; full commands are logged at DEBUG level only
