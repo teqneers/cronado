@@ -44,7 +44,7 @@ Failure notifications include the last 20 lines of the command output, and `ping
 The `ping_url` label lets whoever sets container labels make Cronado send HTTP(S) POST requests. To prevent this from reaching services on Cronado's own network, such as a Docker socket proxy or a cloud metadata endpoint:
 
 - Only `http` and `https` URLs are accepted, redirects are not followed and no proxy is used.
-- By default, the resolved address must be public. Loopback, private (RFC 1918, RFC 4193), link-local, CGNAT, multicast and unspecified addresses are refused at connect time, so DNS tricks cannot bypass the check.
+- By default, the resolved address must be public. All IANA special-purpose ranges are refused at connect time: loopback, private (RFC 1918, RFC 4193), link-local, CGNAT, reserved, documentation and multicast, plus IPv6 transition ranges that can embed an internal IPv4 address (IPv4-mapped, IPv4-compatible, NAT64, 6to4, Teredo). The check runs on the resolved IP, so DNS tricks cannot bypass it.
 - `ping.allow_private_networks` (`CRONADO_PING_ALLOW_PRIVATE_NETWORKS`) lifts this restriction for self-hosted Healthchecks. Enable it only if label authors are trusted.
 
 Ping URLs, webhook URLs and ntfy URLs are never written to logs, because they usually embed a secret.

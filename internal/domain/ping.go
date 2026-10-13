@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
@@ -37,13 +38,42 @@ var allowPrivatePingTargets = func() bool {
 	return cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil && cronadoCtx.AppCtx.Config.PingAllowPrivateNetworks
 }
 
-// cgnatRange is the shared address space (RFC 6598), which IsPrivate omits.
-var cgnatRange = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+// blockedPingPrefixes are the IANA special-purpose ranges a ping must not
+// reach: private, loopback, link-local, shared, reserved, documentation and
+// multicast space, plus IPv6 transition ranges (NAT64, 6to4, Teredo,
+// IPv4-compatible) that can embed an internal IPv4 address.
+var blockedPingPrefixes = mustParsePrefixes(
+	// IPv4
+	"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+	"172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16",
+	"198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
+	// IPv6
+	"::/96", "::1/128", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001::/23",
+	"2001:db8::/32", "2002::/16", "fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8",
+)
+
+func mustParsePrefixes(prefixes ...string) []netip.Prefix {
+	result := make([]netip.Prefix, len(prefixes))
+	for i, p := range prefixes {
+		result[i] = netip.MustParsePrefix(p)
+	}
+	return result
+}
 
 // isInternalIP reports whether ip is not a public unicast address.
+// IPv4-mapped IPv6 addresses (::ffff:a.b.c.d) are checked as IPv4.
 func isInternalIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || cgnatRange.Contains(ip)
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return true
+	}
+	addr = addr.Unmap()
+	for _, prefix := range blockedPingPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // pingClient sends dead man's switch pings. The address check runs on the
