@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Failure notifications include the last 20 lines of the command output (`CRONADO_NOTIFY_INCLUDE_OUTPUT`, default `true`)
 - Webhook notifications with `generic`, `slack`, `discord` and `gotify` payload formats (`CRONADO_NOTIFY_WEBHOOK_*`)
-- `ping_url` label for Healthchecks.io-compatible start, success and failure pings
+- `ping_url` label for Healthchecks.io-compatible start, success and failure pings. Private and loopback targets are refused unless `CRONADO_PING_ALLOW_PRIVATE_NETWORKS=true`
 - API returns `last_run`, `last_success`, `last_result`, `last_error`, `last_duration_seconds` and `next_run` per job
 - Prometheus metrics `cronado_job_last_run_timestamp_seconds`, `cronado_job_last_success_timestamp_seconds`, `cronado_job_next_run_timestamp_seconds` and `cronado_job_running`
 - Unauthenticated `GET /healthz` endpoint, `cronado healthcheck` command and Docker `HEALTHCHECK`
@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cronado config` printed an empty log level
 - Prometheus series of removed jobs are deleted instead of accumulating
 - ntfy error responses are read with a size limit
+- ntfy errors no longer include the server URL and topic in logs
 
 ## [1.0.4] - 2026-10-13
 

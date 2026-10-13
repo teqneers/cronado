@@ -17,6 +17,10 @@ server:
   # When empty, authentication is disabled (default).
   # Set via CRONADO_SERVER_API_TOKEN environment variable in production.
   api_token: ""
+ping:
+  # Allow ping_url labels to reach private and loopback addresses,
+  # e.g. a self-hosted Healthchecks instance. Only enable if label authors are trusted.
+  allow_private_networks: false
 notify:
   interval_seconds: 3600
   # Add the end of the command output to failure notifications.

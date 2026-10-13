@@ -3,9 +3,11 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,15 +38,20 @@ func SendWebhook(subject, body string) error {
 		return err
 	}
 
+	// Errors below never include cfg.URL: webhook URLs usually embed a secret.
 	req, err := http.NewRequest(http.MethodPost, cfg.URL, bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("webhook create request: %w", err)
+		return errors.New("webhook create request: invalid webhook URL")
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
 		return fmt.Errorf("webhook send: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
