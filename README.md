@@ -180,6 +180,8 @@ cronado.backup.ping_url=https://hc-ping.com/5f2c1a3e-...
 
 Cronado sends `POST <ping_url>/start` before each run, `POST <ping_url>` on success and `POST <ping_url>/fail` with the end of the output on failure. Healthchecks then alerts you when a ping is late or a run fails. Redirects are not followed, and the URL is redacted in the API unless an API token is set.
 
+Ping URLs come from container labels, so by default they may only point to public addresses. For a self-hosted Healthchecks instance on a private network, set `CRONADO_PING_ALLOW_PRIVATE_NETWORKS=true`. Pings do not use `HTTP_PROXY`.
+
 ## Configuration
 
 Cronado uses [Viper](https://github.com/spf13/viper) for configuration. When running in a container, use
@@ -203,6 +205,7 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_SERVER_API_TOKEN`               | Bearer token for API/metrics auth    | — (disabled)      |
 | `CRONADO_MIN_SCHEDULE_INTERVAL`          | Minimum interval between runs        | `1m`              |
 | `CRONADO_MAX_TIMEOUT`                    | Maximum allowed job timeout          | `12h`             |
+| `CRONADO_PING_ALLOW_PRIVATE_NETWORKS`    | Allow `ping_url` to reach private/loopback addresses | `false` |
 | `CRONADO_DAEMON_WATCHER_ENABLED`         | Docker daemon health monitoring      | `true`            |
 | `CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS` | Health check interval                | `5`               |
 | `CRONADO_NOTIFY_INTERVAL_SECONDS`        | Notification throttle (same subject) | `3600`            |

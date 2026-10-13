@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,6 +92,11 @@ func TestExecuteJob_SendsPings(t *testing.T) {
 		mu.Unlock()
 	}))
 	defer server.Close()
+
+	// httptest listens on loopback, which is blocked by default.
+	originalAllow := allowPrivatePingTargets
+	allowPrivatePingTargets = func() bool { return true }
+	defer func() { allowPrivatePingTargets = originalAllow }()
 
 	tests := []struct {
 		name      string
@@ -205,5 +211,58 @@ func TestCheckHealth_DisconnectedStream(t *testing.T) {
 	status, healthy := CheckHealth(t.Context())
 	if healthy || status.Status != "unhealthy" || status.EventStream != "disconnected" {
 		t.Errorf("status = %+v, healthy = %v", status, healthy)
+	}
+}
+
+func TestSendPing_BlocksInternalTargetsByDefault(t *testing.T) {
+	var hits int
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+	}))
+	defer server.Close()
+
+	originalAllow := allowPrivatePingTargets
+	allowPrivatePingTargets = func() bool { return false }
+	defer func() { allowPrivatePingTargets = originalAllow }()
+
+	sendPing(&CronJob{ID: "job", PingURL: server.URL + "/secret-uuid"}, pingSuccess, "")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if hits != 0 {
+		t.Errorf("loopback ping target was reached %d times, want 0", hits)
+	}
+}
+
+func TestIsInternalIP(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"127.0.0.1": true, "10.1.2.3": true, "172.17.0.1": true, "192.168.1.10": true,
+		"169.254.169.254": true, "100.64.0.1": true, "0.0.0.0": true, "::1": true, "fd00::1": true,
+		"8.8.8.8": false, "2001:4860:4860::8888": false,
+	} {
+		if got := isInternalIP(net.ParseIP(addr)); got != want {
+			t.Errorf("isInternalIP(%s) = %v, want %v", addr, got, want)
+		}
+	}
+}
+
+func TestPingErrorsDoNotContainURL(t *testing.T) {
+	const secret = "5f2c1a3e-secret-uuid"
+	if err := validatePingURL("ftp://hc-ping.com/" + secret); err == nil || strings.Contains(err.Error(), secret) {
+		t.Errorf("validation error leaks URL: %v", err)
+	}
+
+	_, err := pingClient.Post("http://127.0.0.1:1/"+secret, "text/plain", nil)
+	if err == nil {
+		t.Fatal("expected connection error")
+	}
+	if !strings.Contains(err.Error(), secret) {
+		t.Fatal("precondition: raw client error should contain the URL")
+	}
+	if strings.Contains(stripURL(err).Error(), secret) {
+		t.Errorf("stripped error leaks URL: %v", stripURL(err))
 	}
 }

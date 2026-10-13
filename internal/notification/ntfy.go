@@ -1,9 +1,11 @@
 package notification
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -18,8 +20,8 @@ func SendNtfy(subject, body string) error {
 		return nil
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimRight(cfg.Server, "/"), cfg.Topic)
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	endpoint := fmt.Sprintf("%s/%s", strings.TrimRight(cfg.Server, "/"), cfg.Topic)
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("ntfy create request: %w", err)
 	}
@@ -35,6 +37,11 @@ func SendNtfy(subject, body string) error {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		// Drop the URL from the error: on public servers the topic is the secret.
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
 		return fmt.Errorf("ntfy send: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()

@@ -101,3 +101,15 @@ func TestWebhookPayload_DiscordTruncates(t *testing.T) {
 		t.Errorf("content length = %d, want <= %d", len(got["content"]), discordMaxContent)
 	}
 }
+
+func TestSendWebhook_ErrorDoesNotContainURL(t *testing.T) {
+	const secret = "T000/B000/secret-token"
+	setWebhookConfig(config.WebhookConfig{Enabled: true, URL: "http://127.0.0.1:1/services/" + secret, Format: "slack"})
+	err := SendWebhook("s", "b")
+	if err == nil {
+		t.Fatal("expected connection error")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("error leaks webhook URL: %v", err)
+	}
+}
