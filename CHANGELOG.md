@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-13
+
+### Security
+
+- Pinned Go toolchain to 1.26.9 to fix CVE-2026-78667, CVE-2026-78669 and CVE-2026-97031 (the v1.0.3 release binary was built with Go 1.26.8)
+- CI and release workflows now take the Go version from `go.mod`
+- Release Docker image now runs `apk upgrade` to pick up patched Alpine packages
+
 ## [1.0.3] - 2026-10-13
 
 ### Security

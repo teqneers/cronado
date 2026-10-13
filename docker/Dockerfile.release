@@ -2,7 +2,7 @@ FROM alpine:3
 
 WORKDIR /opt
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata
 
 RUN addgroup -S app \
     && adduser -S -G app app \
