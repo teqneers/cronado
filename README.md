@@ -36,10 +36,12 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Schedule commands inside Docker containers via container labels
 - Automatic detection of container start/stop events
 - Per-job configurable execution timeout
-- HTTP API to list active cron jobs
-- CLI for management (`cron` to start, `cron-job list` to inspect)
-- Prometheus metrics (`/metrics`)
-- Failure notifications via email (SMTP) and [ntfy.sh](https://ntfy.sh)
+- HTTP API to list active cron jobs with last result and next run
+- CLI for management (`cron` to start, `cron-job list` to inspect, `healthcheck`)
+- Prometheus metrics (`/metrics`), including last success and next run per job
+- Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
+- [Healthchecks.io](https://healthchecks.io)-compatible pings per job, to catch jobs that silently stop running
+- `/healthz` endpoint and Docker `HEALTHCHECK`
 - Configurable via YAML or environment variables (`CRONADO_` prefix)
 - Docker daemon health monitoring with automatic recovery
 
@@ -122,6 +124,7 @@ cronado.<job-name>.schedule=@every 10s
 cronado.<job-name>.cmd=echo hello
 cronado.<job-name>.user=root
 cronado.<job-name>.timeout=5m
+cronado.<job-name>.ping_url=https://hc-ping.com/<uuid>
 ```
 
 Each job needs at least `enabled`, `schedule`, and `cmd`. The prefix can be changed via `CRONADO_CRON_LABEL_PREFIX`.
@@ -165,6 +168,17 @@ Cronado supports standard cron expressions and convenience shortcuts:
 | `cmd`      | Yes      | —       | Command to execute inside the container      |
 | `user`     | No       | container's `USER` | User to run the command as        |
 | `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
+| `ping_url` | No       | —       | [Healthchecks.io](https://healthchecks.io)-compatible ping URL (see below) |
+
+### Dead man's switch pings
+
+Failure notifications cannot tell you that a job stopped running altogether, for example because its container is gone. For that, give the job a `ping_url` from [Healthchecks.io](https://healthchecks.io) or a self-hosted Healthchecks instance:
+
+```
+cronado.backup.ping_url=https://hc-ping.com/5f2c1a3e-...
+```
+
+Cronado sends `POST <ping_url>/start` before each run, `POST <ping_url>` on success and `POST <ping_url>/fail` with the end of the output on failure. Healthchecks then alerts you when a ping is late or a run fails. Redirects are not followed, and the URL is redacted in the API unless an API token is set.
 
 ## Configuration
 
@@ -187,11 +201,12 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_SERVER_HOST`                    | HTTP server bind address             | `127.0.0.1`       |
 | `CRONADO_SERVER_PORT`                    | HTTP server port                     | `8080`            |
 | `CRONADO_SERVER_API_TOKEN`               | Bearer token for API/metrics auth    | — (disabled)      |
-| `CRONADO_MIN_SCHEDULE_INTERVAL`          | Minimum `@every` interval            | `1m`              |
+| `CRONADO_MIN_SCHEDULE_INTERVAL`          | Minimum interval between runs        | `1m`              |
 | `CRONADO_MAX_TIMEOUT`                    | Maximum allowed job timeout          | `12h`             |
 | `CRONADO_DAEMON_WATCHER_ENABLED`         | Docker daemon health monitoring      | `true`            |
 | `CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS` | Health check interval                | `5`               |
 | `CRONADO_NOTIFY_INTERVAL_SECONDS`        | Notification throttle (same subject) | `3600`            |
+| `CRONADO_NOTIFY_INCLUDE_OUTPUT`          | Add the end of the command output to failure notifications | `true` |
 | `CRONADO_NOTIFY_EMAIL_ENABLED`           | Enable email notifications           | `false`           |
 | `CRONADO_NOTIFY_EMAIL_SMTP_HOST`         | SMTP server host                     | —                 |
 | `CRONADO_NOTIFY_EMAIL_SMTP_PORT`         | SMTP server port                     | `587`             |
@@ -204,8 +219,30 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_NOTIFY_NTFY_SERVER`             | ntfy server URL                      | `https://ntfy.sh` |
 | `CRONADO_NOTIFY_NTFY_TOPIC`              | ntfy topic                           | —                 |
 | `CRONADO_NOTIFY_NTFY_TOKEN`              | ntfy auth token                      | —                 |
+| `CRONADO_NOTIFY_WEBHOOK_ENABLED`         | Enable webhook notifications         | `false`           |
+| `CRONADO_NOTIFY_WEBHOOK_URL`             | Webhook URL                          | —                 |
+| `CRONADO_NOTIFY_WEBHOOK_FORMAT`          | `generic`, `slack`, `discord` or `gotify` | `generic`    |
 | `CRONADO_METRICS_ENABLED`                | Enable Prometheus metrics            | `true`            |
 | `CRONADO_METRICS_ENDPOINT`               | Metrics endpoint path                | `/metrics`        |
+
+### Webhook Notifications
+
+Webhooks send failure notifications to chat tools. Pick the payload format that matches the receiver:
+
+| Format    | Payload                                   | Works with                          |
+|-----------|-------------------------------------------|-------------------------------------|
+| `generic` | `{"title": "...", "message": "..."}`      | Any JSON receiver (n8n, Home Assistant, ...) |
+| `slack`   | `{"text": "..."}`                         | Slack, Mattermost, Rocket.Chat      |
+| `discord` | `{"content": "..."}`                      | Discord                             |
+| `gotify`  | `{"title": "...", "message": "...", "priority": 5}` | Gotify (`https://gotify.example.com/message?token=<app-token>`) |
+
+```bash
+CRONADO_NOTIFY_WEBHOOK_ENABLED=true
+CRONADO_NOTIFY_WEBHOOK_URL=https://hooks.slack.com/services/...
+CRONADO_NOTIFY_WEBHOOK_FORMAT=slack
+```
+
+Failure notifications include the last 20 lines of the command output (stderr, or stdout if stderr is empty). Set `CRONADO_NOTIFY_INCLUDE_OUTPUT=false` if your jobs print secrets.
 
 ## API
 
@@ -245,11 +282,28 @@ Response:
       "user": "postgres",
       "timeout": 600000000000,
       "status": "idle",
-      "scheduler_id": 1
+      "scheduler_id": 1,
+      "last_run": "2026-10-13T02:00:00+02:00",
+      "last_success": "2026-10-13T02:00:00+02:00",
+      "last_result": "success",
+      "last_duration_seconds": 12.4,
+      "next_run": "2026-10-14T02:00:00+02:00"
     }
   }
 ]
 ```
+
+Without an API token, `command` and `ping_url` are redacted.
+
+### Health Check
+
+`GET /healthz` needs no authentication. It returns `200` when cronado reaches the Docker daemon and is subscribed to its events, and `503` otherwise:
+
+```json
+{"status": "ok", "docker": "ok", "event_stream": "connected", "jobs": 3}
+```
+
+The Docker image runs `cronado healthcheck` as its `HEALTHCHECK`, which queries this endpoint.
 
 ### CLI
 
@@ -266,6 +320,17 @@ Prometheus metrics are available at `/metrics`:
 | `cronado_scheduled_jobs`       | Gauge     | Current number of scheduled jobs                                |
 | `cronado_job_executions_total` | Counter   | Total executions (labels: `container_id`, `job_name`, `status`) |
 | `cronado_job_duration_seconds` | Histogram | Execution duration (labels: `container_id`, `job_name`)         |
+| `cronado_job_last_run_timestamp_seconds`     | Gauge | Unix time of the last run (labels: `container_id`, `container_name`, `job_name`) |
+| `cronado_job_last_success_timestamp_seconds` | Gauge | Unix time of the last successful run (same labels)    |
+| `cronado_job_next_run_timestamp_seconds`     | Gauge | Unix time of the next scheduled run (same labels)     |
+| `cronado_job_running`                        | Gauge | `1` while the job runs, `0` otherwise (same labels)   |
+
+Alert when a job has not succeeded for a day:
+
+```yaml
+- alert: CronadoJobNotSucceeding
+  expr: time() - cronado_job_last_success_timestamp_seconds > 86400
+```
 
 Prometheus scrape config:
 

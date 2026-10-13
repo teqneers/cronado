@@ -19,6 +19,8 @@ server:
   api_token: ""
 notify:
   interval_seconds: 3600
+  # Add the end of the command output to failure notifications.
+  include_output: true
   email:
     enabled: false
     smtp_host: ""
@@ -34,6 +36,11 @@ notify:
     server: "https://ntfy.sh"
     topic: ""
     token: ""
+  webhook:
+    enabled: false
+    url: ""
+    # generic, slack, discord or gotify
+    format: "generic"
 metrics:
   enabled: true
   endpoint: "/metrics"

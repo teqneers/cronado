@@ -44,11 +44,20 @@ type NtfyConfig struct {
 	Token   string // authentication token for ntfy (if required)
 }
 
+// WebhookConfig holds settings for webhook notifications
+type WebhookConfig struct {
+	Enabled bool   // enable or disable webhook notifications
+	URL     string // webhook URL; may contain a secret token
+	Format  string // payload format: generic, slack, discord or gotify
+}
+
 // NotifyConfig holds settings for notifications
 type Notify struct {
-	IntervalSeconds int // minimum interval between failure notifications for the same job
+	IntervalSeconds int  // minimum interval between failure notifications for the same job
+	IncludeOutput   bool // include the tail of the command output in failure notifications
 	Email           EmailConfig
 	Ntfy            NtfyConfig
+	Webhook         WebhookConfig
 }
 
 type Metrics struct {
@@ -92,6 +101,7 @@ func LoadConfig() *Config {
 
 	// notification defaults
 	viper.SetDefault("notify.interval_seconds", 3600)
+	viper.SetDefault("notify.include_output", true)
 
 	// email notification defaults
 	viper.SetDefault("notify.email.enabled", false)
@@ -108,6 +118,11 @@ func LoadConfig() *Config {
 	viper.SetDefault("notify.ntfy.server", "https://ntfy.sh")
 	viper.SetDefault("notify.ntfy.topic", "")
 	viper.SetDefault("notify.ntfy.token", "")
+
+	// webhook notification defaults
+	viper.SetDefault("notify.webhook.enabled", false)
+	viper.SetDefault("notify.webhook.url", "")
+	viper.SetDefault("notify.webhook.format", "generic")
 
 	// metrics defaults
 	viper.SetDefault("metrics.enabled", true)
@@ -167,6 +182,7 @@ func LoadConfig() *Config {
 		},
 		Notify: Notify{
 			IntervalSeconds: viper.GetInt("notify.interval_seconds"),
+			IncludeOutput:   viper.GetBool("notify.include_output"),
 			// Email notifications configuration
 			Email: EmailConfig{
 				Enabled:    viper.GetBool("notify.email.enabled"),
@@ -184,6 +200,12 @@ func LoadConfig() *Config {
 				Server:  viper.GetString("notify.ntfy.server"),
 				Topic:   viper.GetString("notify.ntfy.topic"),
 				Token:   viper.GetString("notify.ntfy.token"),
+			},
+			// Webhook notifications configuration
+			Webhook: WebhookConfig{
+				Enabled: viper.GetBool("notify.webhook.enabled"),
+				URL:     viper.GetString("notify.webhook.url"),
+				Format:  viper.GetString("notify.webhook.format"),
 			},
 		},
 		// Metrics configuration

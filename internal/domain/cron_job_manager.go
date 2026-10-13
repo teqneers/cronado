@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,8 +135,16 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 		"container", container.DisplayName(),
 		"cron_job", job.Name)
 
+	sendPing(job, pingStart, "")
 	stdout, stderr, err := m.executor.ExecuteCommand(container, job.Name, job.Command, job.User, job.Timeout)
 	duration := time.Since(startTime).Seconds()
+
+	if stdout != "" {
+		slog.Debug("Job stdout", "job_id", job.ID, "output", stdout)
+	}
+	if stderr != "" {
+		slog.Debug("Job stderr", "job_id", job.ID, "error", stderr)
+	}
 
 	// Record metrics
 	status := "success"
@@ -147,30 +156,46 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 			"cron_job", job.Name,
 			"error", err)
 
+		output := failureOutput(stdout, stderr)
+		sendPing(job, pingFail, fmt.Sprintf("%v\n\n%s", err, output))
+
 		// Send notification on failure
 		if m.notifier != nil {
-			if notifyErr := m.notifier.SendJobFailure(container, job.Name, err); notifyErr != nil {
+			if notifyErr := m.notifier.SendJobFailure(container, job.Name, err, output); notifyErr != nil {
 				slog.Warn("Failed to send job failure notification", "error", notifyErr)
 			}
 		}
 	} else {
-		if stdout != "" {
-			slog.Debug("Job stdout", "job_id", job.ID, "output", stdout)
-		}
-		if stderr != "" {
-			slog.Debug("Job stderr", "job_id", job.ID, "error", stderr)
-		}
+		sendPing(job, pingSuccess, "")
 	}
 
 	m.metrics.RecordJobExecution(container.ShortID(), job.Name, status)
 	m.metrics.RecordJobDuration(container.ShortID(), job.Name, duration)
 
-	// Mark as idle after execution
+	// Store the result and mark as idle after execution
 	m.mu.Lock()
 	if currentJob, exists := m.jobs[job.ID]; exists {
+		currentJob.LastRun = &startTime
+		currentJob.LastResult = status
+		currentJob.LastDuration = duration
+		currentJob.LastError = ""
+		if err != nil {
+			currentJob.LastError = err.Error()
+		} else {
+			currentJob.LastSuccess = &startTime
+		}
 		currentJob.SetIdle()
 	}
 	m.mu.Unlock()
+}
+
+// failureOutput returns the output that best explains a failure: stderr if
+// the command wrote any, stdout otherwise.
+func failureOutput(stdout, stderr string) string {
+	if strings.TrimSpace(stderr) != "" {
+		return stderr
+	}
+	return stdout
 }
 
 // RemoveJob removes a specific cron job from the manager (interface{} version for context compatibility)
@@ -228,22 +253,33 @@ func (m *CronJobManager) Remove(containerID string) {
 
 // GetAll retrieves all cron jobs (interface{} version for context compatibility)
 func (m *CronJobManager) GetAll() []interface{} {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	result := make([]interface{}, 0, len(m.jobs))
-	for _, job := range m.jobs {
-		result = append(result, *job)
+	jobs := m.GetAllTyped()
+	result := make([]interface{}, 0, len(jobs))
+	for _, job := range jobs {
+		result = append(result, job)
 	}
 	return result
 }
 
-// GetAllTyped retrieves all cron jobs with strong typing
+// GetAllTyped retrieves copies of all cron jobs, including their next run time
 func (m *CronJobManager) GetAllTyped() []CronJob {
+	// Read the schedule before taking the lock; the scheduler has its own.
+	nextRuns := make(map[cron.EntryID]time.Time)
+	for _, entry := range m.scheduler.Entries() {
+		if !entry.Next.IsZero() {
+			nextRuns[entry.ID] = entry.Next
+		}
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := make([]CronJob, 0, len(m.jobs))
 	for _, job := range m.jobs {
-		result = append(result, *job)
+		jobCopy := *job
+		if next, ok := nextRuns[job.SchedulerId]; ok {
+			jobCopy.NextRun = &next
+		}
+		result = append(result, jobCopy)
 	}
 	return result
 }

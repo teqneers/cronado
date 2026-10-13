@@ -27,6 +27,7 @@ type CronJobBuilder struct {
 	command             string
 	user                string
 	timeout             time.Duration
+	pingURL             string
 	minScheduleInterval time.Duration
 	maxTimeout          time.Duration
 	hasErrors           bool
@@ -140,6 +141,20 @@ func (b *CronJobBuilder) SetTimeout(value string) {
 	b.timeout = d
 }
 
+// SetPingURL sets a Healthchecks.io-compatible URL that is pinged when the job
+// starts, succeeds or fails.
+func (b *CronJobBuilder) SetPingURL(value string) {
+	value = trimOuterQuotes(strings.TrimSpace(value))
+	if value == "" {
+		return
+	}
+	if err := validatePingURL(value); err != nil {
+		b.addError(err.Error())
+		return
+	}
+	b.pingURL = value
+}
+
 // addError adds an error to the builder's error collection
 func (b *CronJobBuilder) addError(err string) {
 	b.hasErrors = true
@@ -183,6 +198,7 @@ func (b *CronJobBuilder) Build() (*CronJob, error) {
 		Command:     b.command,
 		User:        b.user,
 		Timeout:     b.timeout,
+		PingURL:     b.pingURL,
 		Status:      StatusIdle,
 		SchedulerId: -1,
 	}, nil
@@ -210,6 +226,7 @@ func (b *CronJobBuilder) Reset() {
 	b.command = ""
 	b.user = ""
 	b.timeout = DefaultTimeout
+	b.pingURL = ""
 	b.hasErrors = false
 	b.errors = []string{}
 }

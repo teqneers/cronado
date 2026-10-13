@@ -14,6 +14,7 @@ import (
 	"github.com/teqneers/cronado/internal/domain"
 	"github.com/teqneers/cronado/internal/metrics"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,9 @@ var cronCmd = &cobra.Command{
 		if config.Notify.Ntfy.Enabled {
 			slog.Info("Ntfy notifications enabled")
 		}
+		if config.Notify.Webhook.Enabled {
+			slog.Info("Webhook notifications enabled", "format", config.Notify.Webhook.Format)
+		}
 
 		domain.SetupDockerClient()
 
@@ -53,6 +57,7 @@ var cronCmd = &cobra.Command{
 		cronJobManager := domain.NewCronJobManager(domain.CronJobManagerOptions{})
 		cronJobManager.Start()
 		context.AppCtx.CronJobManager = cronJobManager
+		prometheus.MustRegister(domain.NewJobStateCollector(cronJobManager))
 
 		domain.InitializeAlreadyRunningContainers()
 		domain.StartEventListener(stop)

@@ -20,6 +20,9 @@ func SetupRouter() *gin.Engine {
 		r.GET(config.Endpoint, authMiddleware, gin.WrapH(promhttp.Handler()))
 	}
 
+	// Health check is unauthenticated so Docker and orchestrators can use it.
+	r.GET("/healthz", GetHealth)
+
 	api := r.Group("/api", authMiddleware)
 	api.GET("/cron-job", GetCronJobList)
 

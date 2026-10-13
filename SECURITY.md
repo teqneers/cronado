@@ -35,6 +35,14 @@ cronado.my-job.user=root
 
 A command that exceeds its timeout is killed inside the container with `timeout -s KILL` (available in busybox and coreutils images). Command output kept by Cronado is capped at 64 KiB per stream.
 
+### Command Output in Notifications
+
+Failure notifications include the last 20 lines of the command output, and `ping_url` failure pings the last 10 KiB. If a job may print secrets, set `CRONADO_NOTIFY_INCLUDE_OUTPUT=false` and do not give it a `ping_url`.
+
+### Outgoing Requests from Labels
+
+The `ping_url` label lets whoever sets container labels make Cronado send HTTP(S) POST requests from its own network position. Only `http` and `https` URLs are accepted and redirects are not followed. If label authors are not trusted, run Cronado in a network that cannot reach sensitive internal services.
+
 ### Credentials
 
 SMTP and ntfy credentials should be passed via **environment variables** (e.g., `CRONADO_NOTIFY_EMAIL_PASSWORD`) rather than config files, especially in shared environments.

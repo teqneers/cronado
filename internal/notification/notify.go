@@ -62,6 +62,12 @@ func Notify(subject, body string) {
 			slog.Error("notification: ntfy send failed", "error", err)
 		}
 	}
+
+	if cfg.Webhook.Enabled {
+		if err := SendWebhook(subject, body); err != nil {
+			slog.Error("notification: webhook send failed", "error", err)
+		}
+	}
 }
 
 // timeNowUnix returns current time as Unix seconds. Abstracted for testing.

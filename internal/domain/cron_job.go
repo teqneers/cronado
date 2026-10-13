@@ -25,8 +25,17 @@ type CronJob struct {
 	Command     string        `json:"command"`
 	User        string        `json:"user"`
 	Timeout     time.Duration `json:"timeout"`
+	PingURL     string        `json:"ping_url,omitempty"`
 	Status      string        `json:"status"`
 	SchedulerId cron.EntryID  `json:"scheduler_id"`
+
+	// Execution state, updated after every run
+	LastRun      *time.Time `json:"last_run,omitempty"`
+	LastSuccess  *time.Time `json:"last_success,omitempty"`
+	LastResult   string     `json:"last_result,omitempty"` // "success" or "failure"
+	LastError    string     `json:"last_error,omitempty"`
+	LastDuration float64    `json:"last_duration_seconds,omitempty"`
+	NextRun      *time.Time `json:"next_run,omitempty"`
 }
 
 // GetShortContainerID returns the short ID of the associated container

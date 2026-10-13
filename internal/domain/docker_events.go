@@ -143,6 +143,8 @@ func listenForEvents(eventFilter filters.Args, stop chan os.Signal) (err error, 
 	eventsChan, errChan := GetDockerClient().Events(ctx, events.ListOptions{
 		Filters: eventFilter,
 	})
+	eventStreamConnected.Store(true)
+	defer eventStreamConnected.Store(false)
 
 	for {
 		select {
@@ -287,12 +289,14 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 			builder.SetUser(labelValue)
 		case "timeout":
 			builder.SetTimeout(labelValue)
+		case "ping_url":
+			builder.SetPingURL(labelValue)
 		default:
 			slog.Warn("Unknown cron job property",
 				"property", property,
 				"label", label,
 				"container", container.DisplayName(),
-				"valid_properties", "enabled,schedule,cmd,user,timeout")
+				"valid_properties", "enabled,schedule,cmd,user,timeout,ping_url")
 		}
 	}
 

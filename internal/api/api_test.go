@@ -229,3 +229,38 @@ func TestGetCronJobList_ShowsCommandWithToken(t *testing.T) {
 		t.Errorf("expected full command, got %q", item.CronJob.Command)
 	}
 }
+
+func TestHealthz_UnauthenticatedAndUnhealthyWithoutDocker(t *testing.T) {
+	setupTestRouter(&mockCronJobManager{})
+	context.AppCtx.Config.ServerConfig.APIToken = "s3cret"
+	router := SetupRouter()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/healthz", nil)
+	router.ServeHTTP(w, req)
+
+	// No auth header, yet not 401: the health check is public. No Docker
+	// client in tests, so it reports unhealthy.
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+	var status domain.HealthStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if status.Docker != "unreachable" || status.Status != "unhealthy" {
+		t.Errorf("status = %+v", status)
+	}
+}
+
+func TestGetCronJobList_RedactsPingURLWithoutToken(t *testing.T) {
+	manager := &mockCronJobManager{jobs: []domain.CronJob{
+		{ID: "abc-backup", Name: "backup", Command: "x", PingURL: "https://hc-ping.com/secret-uuid"},
+	}}
+	router := setupTestRouter(manager)
+
+	item := getSingleJob(t, router, "")
+	if item.CronJob.PingURL != RedactedValue {
+		t.Errorf("expected redacted ping URL, got %q", item.CronJob.PingURL)
+	}
+}
