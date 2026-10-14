@@ -291,6 +291,8 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 			builder.SetTimezone(labelValue)
 		case "timeout":
 			builder.SetTimeout(labelValue)
+		case "jitter":
+			builder.SetJitter(labelValue)
 		case "ping_url":
 			builder.SetPingURL(labelValue)
 		default:
@@ -298,7 +300,7 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 				"property", property,
 				"label", label,
 				"container", container.DisplayName(),
-				"valid_properties", "enabled,schedule,cmd,user,timezone,timeout,ping_url")
+				"valid_properties", "enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url")
 		}
 	}
 

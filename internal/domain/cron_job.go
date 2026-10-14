@@ -13,6 +13,7 @@ const DefaultTimeout = 30 * time.Second
 // CronJob status constants
 const (
 	StatusIdle    = "idle"
+	StatusPending = "pending" // waiting out its jitter delay
 	StatusRunning = "running"
 )
 
@@ -26,6 +27,7 @@ type CronJob struct {
 	User        string        `json:"user"`
 	Timezone    string        `json:"timezone,omitempty"`
 	Timeout     time.Duration `json:"timeout"`
+	Jitter      time.Duration `json:"jitter,omitempty"`
 	PingURL     string        `json:"ping_url,omitempty"`
 	Status      string        `json:"status"`
 	SchedulerId cron.EntryID  `json:"scheduler_id"`
@@ -94,6 +96,11 @@ func (c *CronJob) IsRunning() bool {
 // IsIdle returns true if the cron job is idle
 func (c *CronJob) IsIdle() bool {
 	return c.Status == StatusIdle
+}
+
+// SetPending sets the cron job status to pending
+func (c *CronJob) SetPending() {
+	c.Status = StatusPending
 }
 
 // SetRunning sets the cron job status to running
