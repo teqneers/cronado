@@ -24,6 +24,7 @@ type CronJob struct {
 	Schedule    string        `json:"schedule"`
 	Command     string        `json:"command"`
 	User        string        `json:"user"`
+	Timezone    string        `json:"timezone,omitempty"`
 	Timeout     time.Duration `json:"timeout"`
 	PingURL     string        `json:"ping_url,omitempty"`
 	Status      string        `json:"status"`
@@ -52,6 +53,15 @@ func (c *CronJob) GetContainerDisplayName() string {
 		return c.Container.DisplayName()
 	}
 	return c.GetShortContainerID()
+}
+
+// SchedulerSpec returns the schedule as passed to the scheduler, with the
+// job's time zone applied as a CRON_TZ prefix.
+func (c *CronJob) SchedulerSpec() string {
+	if c.Timezone == "" {
+		return c.Schedule
+	}
+	return "CRON_TZ=" + c.Timezone + " " + c.Schedule
 }
 
 // IsValid checks if the cron job has all required fields set
