@@ -85,7 +85,7 @@ func (m *CronJobManager) addTyped(container *Container, job CronJob) error {
 	defer m.mu.Unlock()
 
 	jobID := job.ID
-	entryID, err := m.scheduler.AddFunc(job.Schedule, func() {
+	entryID, err := m.scheduler.AddFunc(job.SchedulerSpec(), func() {
 		m.executeJob(container, &job)
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func (m *CronJobManager) addTyped(container *Container, job CronJob) error {
 		"job_id", jobID,
 		"container", container.DisplayName(),
 		"cron_job", job.Name,
-		"schedule", job.Schedule,
+		"schedule", job.SchedulerSpec(),
 		"command", truncateForLog(job.Command, 80),
 		"user", displayUser(job.User))
 	slog.Debug("Cron job command detail", "job_id", jobID, "command", job.Command)

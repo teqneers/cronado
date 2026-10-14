@@ -26,6 +26,7 @@ type CronJobBuilder struct {
 	schedule            string
 	command             string
 	user                string
+	timezone            string
 	timeout             time.Duration
 	pingURL             string
 	minScheduleInterval time.Duration
@@ -119,6 +120,21 @@ func (b *CronJobBuilder) SetUser(user string) {
 	b.user = strings.TrimSpace(user)
 }
 
+// SetTimezone sets the IANA time zone (e.g. "Europe/Berlin") the schedule is
+// evaluated in. An empty value keeps the scheduler's local time zone.
+func (b *CronJobBuilder) SetTimezone(value string) {
+	value = trimOuterQuotes(strings.TrimSpace(value))
+	if value == "" {
+		return
+	}
+	loc, err := time.LoadLocation(value)
+	if err != nil {
+		b.addError(fmt.Sprintf("invalid timezone: %s (expected IANA name like Europe/Berlin)", value))
+		return
+	}
+	b.timezone = loc.String()
+}
+
 // SetTimeout sets the command execution timeout (e.g. "30s", "5m", "1h")
 func (b *CronJobBuilder) SetTimeout(value string) {
 	value = strings.TrimSpace(value)
@@ -175,6 +191,9 @@ func (b *CronJobBuilder) IsValid() bool {
 	if b.command == "" {
 		b.addError("command not set")
 	}
+	if b.timezone != "" && hasTimezonePrefix(b.schedule) {
+		b.addError("timezone label conflicts with CRON_TZ/TZ prefix in schedule")
+	}
 	return !b.hasErrors
 }
 
@@ -197,6 +216,7 @@ func (b *CronJobBuilder) Build() (*CronJob, error) {
 		Schedule:    b.schedule,
 		Command:     b.command,
 		User:        b.user,
+		Timezone:    b.timezone,
 		Timeout:     b.timeout,
 		PingURL:     b.pingURL,
 		Status:      StatusIdle,
@@ -225,6 +245,7 @@ func (b *CronJobBuilder) Reset() {
 	b.schedule = ""
 	b.command = ""
 	b.user = ""
+	b.timezone = ""
 	b.timeout = DefaultTimeout
 	b.pingURL = ""
 	b.hasErrors = false

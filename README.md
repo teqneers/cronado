@@ -123,6 +123,7 @@ cronado.<job-name>.enabled=true|false
 cronado.<job-name>.schedule=@every 10s
 cronado.<job-name>.cmd=echo hello
 cronado.<job-name>.user=root
+cronado.<job-name>.timezone=Europe/Berlin
 cronado.<job-name>.timeout=5m
 cronado.<job-name>.ping_url=https://hc-ping.com/<uuid>
 ```
@@ -152,7 +153,7 @@ Cronado supports standard cron expressions and convenience shortcuts:
 |---------------|----------------|------------------------|
 | Standard cron | `0 2 * * *`    | Daily at 2:00 AM       |
 | 6-field cron  | `0 30 * * * *` | Every hour at :30 (first field is seconds) |
-| Time zone     | `CRON_TZ=Europe/Berlin 0 2 * * *` | Daily at 2:00 AM Berlin time |
+| Time zone     | `CRON_TZ=Europe/Berlin 0 2 * * *` | Daily at 2:00 AM Berlin time (or use the `timezone` label) |
 | `@every`      | `@every 5m`    | Every 5 minutes        |
 | `@hourly`     | `@hourly`      | Every hour             |
 | `@daily`      | `@daily`       | Once a day at midnight |
@@ -167,6 +168,7 @@ Cronado supports standard cron expressions and convenience shortcuts:
 | `schedule` | Yes      | —       | Cron expression or `@every` interval         |
 | `cmd`      | Yes      | —       | Command to execute inside the container      |
 | `user`     | No       | container's `USER` | User to run the command as        |
+| `timezone` | No       | Cronado's time zone (`TZ`, UTC in the image) | IANA time zone the schedule runs in (e.g., `Europe/Berlin`) |
 | `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
 | `ping_url` | No       | —       | [Healthchecks.io](https://healthchecks.io)-compatible ping URL (see below) |
 

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -38,4 +39,9 @@ func shortestInterval(schedule cron.Schedule, from time.Time) time.Duration {
 		prev = next
 	}
 	return shortest
+}
+
+// hasTimezonePrefix reports whether schedule already sets its own time zone.
+func hasTimezonePrefix(schedule string) bool {
+	return strings.HasPrefix(schedule, "CRON_TZ=") || strings.HasPrefix(schedule, "TZ=")
 }

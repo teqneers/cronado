@@ -60,7 +60,7 @@ var cronJobListCmd = &cobra.Command{
 			fmt.Printf("- Container: %s | Entry ID: %d | Schedule: %s | Cmd: %s\n",
 				containerDisplay,
 				job.CronJob.SchedulerId,
-				job.CronJob.Schedule,
+				job.CronJob.SchedulerSpec(),
 				job.CronJob.Command)
 		}
 
