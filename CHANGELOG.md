@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `timezone` label to run a job's schedule in an IANA time zone, e.g. `cronado.<job>.timezone=Europe/Berlin`. Invalid names and a conflicting `CRON_TZ=` prefix in the schedule are rejected. See [Time zones](README.md#time-zones), including how daylight saving time affects jobs in the skipped or repeated hour
-- `jitter` label to delay each run by a random amount up to the given duration, e.g. `cronado.<job>.jitter=2m`, so jobs sharing a schedule do not all start at once. The jitter must be shorter than the schedule interval. While waiting, the job's status is `pending`, and a shutdown cancels the wait
+- `jitter` label to delay each run by a random amount up to the given duration, e.g. `cronado.<job>.jitter=2m`, so jobs sharing a schedule do not all start at once. The jitter must be shorter than the schedule interval. While waiting, the job's status is `pending`, and a shutdown cancels the wait. See [Spreading start times](README.md#spreading-start-times-jitter)
 
 ## [1.1.0] - 2026-10-13
 
