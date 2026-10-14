@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `timezone` label to run a job's schedule in an IANA time zone, e.g. `cronado.<job>.timezone=Europe/Berlin`. Invalid names and a conflicting `CRON_TZ=` prefix in the schedule are rejected
+- `timezone` label to run a job's schedule in an IANA time zone, e.g. `cronado.<job>.timezone=Europe/Berlin`. Invalid names and a conflicting `CRON_TZ=` prefix in the schedule are rejected. See [Time zones](README.md#time-zones), including how daylight saving time affects jobs in the skipped or repeated hour
 
 ## [1.1.0] - 2026-10-13
 

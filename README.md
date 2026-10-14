@@ -36,6 +36,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Schedule commands inside Docker containers via container labels
 - Automatic detection of container start/stop events
 - Per-job configurable execution timeout
+- Per-job time zones, so schedules follow local time including daylight saving time
 - HTTP API to list active cron jobs with last result and next run
 - CLI for management (`cron` to start, `cron-job list` to inspect, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
@@ -159,6 +160,28 @@ Cronado supports standard cron expressions and convenience shortcuts:
 | `@daily`      | `@daily`       | Once a day at midnight |
 | `@weekly`     | `@weekly`      | Once a week            |
 | `@monthly`    | `@monthly`     | Once a month           |
+
+### Time zones
+
+By default, schedules run in cronado's own time zone. The cronado image uses UTC unless you set the `TZ` environment variable on the cronado container. In UTC, a job meant for "2:00 AM local time" moves by one hour twice a year when daylight saving time starts and ends.
+
+Set the `timezone` label to run a job's schedule in a specific time zone:
+
+```
+cronado.backup.schedule=0 2 * * *
+cronado.backup.timezone=Europe/Berlin
+```
+
+This job runs at 2:00 AM Berlin time all year: 00:00 UTC in summer and 01:00 UTC in winter.
+
+- **Allowed values:** IANA time zone names such as `Europe/Berlin`, `America/New_York` or `UTC` ([list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)). Prefer region names over legacy names like `CET` or `EST`. Offsets like `+02:00` and abbreviations like `CEST` are rejected.
+- **Invalid names** reject the job with an error in the log, like an invalid schedule.
+- **Prefix form:** `CRON_TZ=Europe/Berlin 0 2 * * *` in the schedule does the same thing. Use one or the other: a job with both the label and a `CRON_TZ=` or `TZ=` prefix is rejected.
+- **All jobs at once:** to change the default for every job, set `TZ=Europe/Berlin` on the cronado container instead of labelling each job.
+- **`@every` schedules** run at fixed intervals and are not affected by the time zone.
+- **API:** `schedule` shows the label value as written and `timezone` shows the zone. `next_run` includes its UTC offset, so it is unambiguous whichever zone it is shown in.
+
+**Daylight saving time:** on the day the clocks go forward, times in the skipped hour do not exist, so a job scheduled then (for example `30 2 * * *` in `Europe/Berlin`) does not run that day. On the day the clocks go back, times in the repeated hour occur twice, so such a job runs twice. Avoid scheduling daily jobs between 2:00 and 3:00 AM in zones that observe daylight saving time.
 
 ### Label Reference
 
@@ -298,7 +321,7 @@ Response:
 ]
 ```
 
-Without an API token, `command` and `ping_url` are redacted.
+Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label.
 
 ### Health Check
 
