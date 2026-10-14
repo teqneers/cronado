@@ -37,6 +37,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Automatic detection of container start/stop events
 - Per-job configurable execution timeout
 - Per-job time zones, so schedules follow local time including daylight saving time
+- Per-job random start delay (jitter) to spread out jobs that share a schedule
 - HTTP API to list active cron jobs with last result and next run
 - CLI for management (`cron` to start, `cron-job list` to inspect, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
@@ -126,6 +127,7 @@ cronado.<job-name>.cmd=echo hello
 cronado.<job-name>.user=root
 cronado.<job-name>.timezone=Europe/Berlin
 cronado.<job-name>.timeout=5m
+cronado.<job-name>.jitter=2m
 cronado.<job-name>.ping_url=https://hc-ping.com/<uuid>
 ```
 
@@ -193,7 +195,26 @@ This job runs at 2:00 AM Berlin time all year: 00:00 UTC in summer and 01:00 UTC
 | `user`     | No       | container's `USER` | User to run the command as        |
 | `timezone` | No       | Cronado's time zone (`TZ`, UTC in the image) | IANA time zone the schedule runs in (e.g., `Europe/Berlin`) |
 | `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
+| `jitter`   | No       | —       | Random delay of up to this duration before each run (e.g., `2m`); must be shorter than the schedule interval |
 | `ping_url` | No       | —       | [Healthchecks.io](https://healthchecks.io)-compatible ping URL (see below) |
+
+### Spreading start times (jitter)
+
+Jobs with the same schedule start at the same second. With many containers on one host, for example several PHP apps running `0 * * * *`, that causes a load spike every hour and can hit external APIs or a shared database all at once. The `jitter` label delays each run by a random amount between zero and the given duration:
+
+```
+cronado.report.schedule=0 * * * *
+cronado.report.jitter=5m
+```
+
+This job starts at a random time between :00 and :05 every hour. A new delay is picked for every run.
+
+- **Allowed values:** any duration like `30s`, `5m` or `1h30m`. `0` or no label means no delay.
+- **Must be shorter than the schedule interval.** `@every 10m` with `jitter=10m` is rejected, because a delayed run would collide with the next one. For schedules with uneven gaps, such as `0 9,10 * * *`, the shortest gap counts.
+- **Status while waiting:** the job shows `pending` in the API until the delay is over, then `running`. A trigger that arrives while the job is still `pending` or `running` is skipped.
+- **Next run:** `next_run` in the API and `cronado_job_next_run_timestamp_seconds` show the scheduled time without the delay. The actual start can be up to the jitter later.
+- **Stops and restarts:** if cronado shuts down or the container stops during the wait, the run is dropped and not executed.
+- **Timeout and pings:** the timeout starts when the command starts, not when the delay starts. Healthchecks pings are sent when the command starts, so allow for the jitter in the check's grace time.
 
 ### Dead man's switch pings
 
@@ -322,6 +343,8 @@ Response:
 ```
 
 Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label.
+
+`status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
 
 ### Health Check
 

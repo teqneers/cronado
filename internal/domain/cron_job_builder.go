@@ -28,6 +28,7 @@ type CronJobBuilder struct {
 	user                string
 	timezone            string
 	timeout             time.Duration
+	jitter              time.Duration
 	pingURL             string
 	minScheduleInterval time.Duration
 	maxTimeout          time.Duration
@@ -157,6 +158,25 @@ func (b *CronJobBuilder) SetTimeout(value string) {
 	b.timeout = d
 }
 
+// SetJitter sets the maximum random delay added before each run (e.g. "5m"),
+// so that jobs sharing a schedule do not all start at the same second.
+func (b *CronJobBuilder) SetJitter(value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		b.addError(fmt.Sprintf("invalid jitter value: %s (expected duration like 30s, 5m)", value))
+		return
+	}
+	if d < 0 {
+		b.addError("jitter cannot be negative")
+		return
+	}
+	b.jitter = d
+}
+
 // SetPingURL sets a Healthchecks.io-compatible URL that is pinged when the job
 // starts, succeeds or fails.
 func (b *CronJobBuilder) SetPingURL(value string) {
@@ -194,7 +214,23 @@ func (b *CronJobBuilder) IsValid() bool {
 	if b.timezone != "" && hasTimezonePrefix(b.schedule) {
 		b.addError("timezone label conflicts with CRON_TZ/TZ prefix in schedule")
 	}
+	b.validateJitter()
 	return !b.hasErrors
+}
+
+// validateJitter makes sure the jitter delay ends before the next run is due,
+// otherwise delayed runs would collide with the following one and be skipped.
+func (b *CronJobBuilder) validateJitter() {
+	if b.jitter == 0 || b.schedule == "" {
+		return
+	}
+	parsed, err := cronParser.Parse(b.schedule)
+	if err != nil {
+		return // already reported by SetSchedule
+	}
+	if gap := shortestInterval(parsed, time.Now()); gap > 0 && b.jitter >= gap {
+		b.addError(fmt.Sprintf("jitter %s must be shorter than the schedule interval %s", b.jitter, gap))
+	}
 }
 
 // GetErrors returns all validation errors
@@ -218,6 +254,7 @@ func (b *CronJobBuilder) Build() (*CronJob, error) {
 		User:        b.user,
 		Timezone:    b.timezone,
 		Timeout:     b.timeout,
+		Jitter:      b.jitter,
 		PingURL:     b.pingURL,
 		Status:      StatusIdle,
 		SchedulerId: -1,
@@ -247,6 +284,7 @@ func (b *CronJobBuilder) Reset() {
 	b.user = ""
 	b.timezone = ""
 	b.timeout = DefaultTimeout
+	b.jitter = 0
 	b.pingURL = ""
 	b.hasErrors = false
 	b.errors = []string{}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,13 @@ type CronJobManager struct {
 	executor    CommandExecutor
 	metrics     MetricsCollector
 	notifier    NotificationService
+
+	// stopping is closed by Stop so that runs waiting out their jitter
+	// delay do not hold up shutdown.
+	stopping chan struct{}
+	stopOnce sync.Once
+	// jitterDelay picks the delay for a run with the given maximum jitter.
+	jitterDelay func(maxJitter time.Duration) time.Duration
 }
 
 // CronJobManagerOptions contains configuration options for CronJobManager
@@ -63,7 +71,14 @@ func NewCronJobManager(opts CronJobManagerOptions) *CronJobManager {
 		executor:    opts.Executor,
 		metrics:     opts.Metrics,
 		notifier:    opts.Notifier,
+		stopping:    make(chan struct{}),
+		jitterDelay: randomJitter,
 	}
+}
+
+// randomJitter returns a random delay in [0, maxJitter).
+func randomJitter(maxJitter time.Duration) time.Duration {
+	return rand.N(maxJitter) //nolint:gosec // spreading load, not security relevant
 }
 
 // Add adds a new cron job to the manager (interface{} version for context compatibility)
@@ -120,10 +135,28 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 		m.mu.Unlock()
 		return
 	}
-	if currentJob.IsRunning() {
-		slog.Warn("Skipping cron job execution - already running", "job_id", job.ID)
+	if !currentJob.IsIdle() {
+		slog.Warn("Skipping cron job execution - already running", "job_id", job.ID, "status", currentJob.Status)
 		m.mu.Unlock()
 		return
+	}
+	if job.Jitter > 0 {
+		currentJob.SetPending()
+		m.mu.Unlock()
+
+		waited := m.waitJitter(job)
+
+		m.mu.Lock()
+		// The job may have been removed or re-registered during the wait.
+		if m.jobs[job.ID] != currentJob {
+			m.mu.Unlock()
+			return
+		}
+		if !waited {
+			currentJob.SetIdle()
+			m.mu.Unlock()
+			return
+		}
 	}
 	currentJob.SetRunning()
 	m.mu.Unlock()
@@ -187,6 +220,25 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 		currentJob.SetIdle()
 	}
 	m.mu.Unlock()
+}
+
+// waitJitter sleeps for a random part of the job's jitter. It returns false
+// if the manager is stopped during the wait.
+func (m *CronJobManager) waitJitter(job *CronJob) bool {
+	delay := m.jitterDelay(job.Jitter)
+	if delay <= 0 {
+		return true
+	}
+	slog.Debug("Delaying cron job by jitter", "job_id", job.ID, "delay", delay)
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-m.stopping:
+		return false
+	}
 }
 
 // failureOutput returns the output that best explains a failure: stderr if
@@ -312,6 +364,7 @@ func (m *CronJobManager) Start() {
 
 // Stop stops the cron scheduler
 func (m *CronJobManager) Stop() {
+	m.stopOnce.Do(func() { close(m.stopping) })
 	ctx := m.scheduler.Stop()
 	if ctx != nil {
 		// Wait for stop to complete
