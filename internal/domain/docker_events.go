@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"regexp"
-	"strings"
 	"time"
 
 	cronadoCtx "github.com/teqneers/cronado/internal/context"
@@ -224,100 +222,32 @@ func handleContainer(container *Container) {
 	}
 }
 
-// validJobName matches alphanumeric names with hyphens and underscores
-var validJobName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
-
-// parseCronsFromContainer extracts cron job definitions from container labels with improved robustness
+// parseCronsFromContainer extracts cron job definitions from container labels
+// and logs every problem found.
 func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[string]CronJob {
-	// Phase 1: Parse all labels and group by job name
-	builders := make(map[string]*CronJobBuilder)
-
-	prefixWithDot := cronLabelPrefix + "."
-
-	for label, labelValue := range container.Labels {
-		if !strings.HasPrefix(label, prefixWithDot) {
-			continue
-		}
-
-		// Remove prefix and split remaining parts
-		remaining := strings.TrimPrefix(label, prefixWithDot)
-		parts := strings.SplitN(remaining, ".", 2)
-
-		if len(parts) != 2 {
-			slog.Warn("Invalid label format, expected format: prefix.jobname.property",
-				"label", label,
-				"container", container.DisplayName(),
-				"expected", cronLabelPrefix+".jobname.property")
-			continue
-		}
-
-		jobName := parts[0]
-		property := parts[1]
-
-		// Validate job name
-		if jobName == "" {
-			slog.Warn("Empty job name in label", "label", label, "container", container.DisplayName())
-			continue
-		}
-		if !validJobName.MatchString(jobName) {
-			slog.Warn("Invalid job name, must match [a-zA-Z0-9][a-zA-Z0-9_-]*",
-				"job_name", jobName, "label", label, "container", container.DisplayName())
-			continue
-		}
-
-		// Get or create builder for this job
-		if _, exists := builders[jobName]; !exists {
-			var minScheduleInterval, maxTimeout time.Duration
-			if cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil {
-				minScheduleInterval = cronadoCtx.AppCtx.Config.MinScheduleInterval
-				maxTimeout = cronadoCtx.AppCtx.Config.MaxTimeout
-			}
-			builders[jobName] = NewCronJobBuilder(jobName, container, minScheduleInterval, maxTimeout)
-		}
-
-		builder := builders[jobName]
-
-		// Set the property
-		switch property {
-		case "enabled":
-			builder.SetEnabled(labelValue)
-		case "schedule":
-			builder.SetSchedule(labelValue)
-		case "cmd":
-			builder.SetCommand(labelValue)
-		case "user":
-			builder.SetUser(labelValue)
-		case "timezone":
-			builder.SetTimezone(labelValue)
-		case "timeout":
-			builder.SetTimeout(labelValue)
-		case "jitter":
-			builder.SetJitter(labelValue)
-		case "ping_url":
-			builder.SetPingURL(labelValue)
-		default:
-			slog.Warn("Unknown cron job property",
-				"property", property,
-				"label", label,
-				"container", container.DisplayName(),
-				"valid_properties", "enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url")
-		}
+	var minScheduleInterval, maxTimeout time.Duration
+	if cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil {
+		minScheduleInterval = cronadoCtx.AppCtx.Config.MinScheduleInterval
+		maxTimeout = cronadoCtx.AppCtx.Config.MaxTimeout
 	}
 
-	// Phase 2: Build valid cron jobs
-	result := make(map[string]CronJob, len(builders))
+	jobs, issues := ParseJobLabels(container, cronLabelPrefix, minScheduleInterval, maxTimeout)
 
-	for jobName, builder := range builders {
-		cronJob, err := builder.Build()
-		if err != nil {
+	for _, issue := range issues {
+		if issue.JobRejected {
 			slog.Error("Failed to build cron job",
-				"job", jobName,
+				"job", issue.Job,
 				"container", container.DisplayName(),
-				"error", err)
+				"error", issue.Message)
 			continue
 		}
+		slog.Warn("Ignoring invalid cron job label",
+			"label", issue.Label,
+			"container", container.DisplayName(),
+			"problem", issue.Message)
+	}
 
-		result[jobName] = *cronJob
+	for jobName, cronJob := range jobs {
 		slog.Debug("Successfully parsed cron job",
 			"job", jobName,
 			"container", container.DisplayName(),
@@ -327,7 +257,7 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 			"user", cronJob.User)
 	}
 
-	return result
+	return jobs
 }
 
 // registerCronJob validates and registers a cron job using the context manager

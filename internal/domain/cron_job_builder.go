@@ -34,6 +34,7 @@ type CronJobBuilder struct {
 	maxTimeout          time.Duration
 	hasErrors           bool
 	errors              []string
+	invalidFields       map[string]bool // fields whose label was set but invalid
 }
 
 // NewCronJobBuilder creates a new builder for the given job name
@@ -57,7 +58,7 @@ func (b *CronJobBuilder) SetEnabled(value string) {
 		enabled := false
 		b.enabled = &enabled
 	default:
-		b.addError(fmt.Sprintf("invalid enabled value: %s (expected true/false)", value))
+		b.addFieldError("enabled", fmt.Sprintf("invalid enabled value: %s (expected true/false)", value))
 	}
 }
 
@@ -66,7 +67,7 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 	schedule = strings.TrimSpace(schedule)
 	schedule = trimOuterQuotes(schedule)
 	if schedule == "" {
-		b.addError("schedule cannot be empty")
+		b.addFieldError("schedule", "schedule cannot be empty")
 		return
 	}
 
@@ -75,11 +76,11 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 		durationStr := strings.TrimPrefix(schedule, "@every ")
 		d, err := time.ParseDuration(durationStr)
 		if err != nil {
-			b.addError(fmt.Sprintf("invalid @every duration: %s", durationStr))
+			b.addFieldError("schedule", fmt.Sprintf("invalid @every duration: %s", durationStr))
 			return
 		}
 		if b.minScheduleInterval > 0 && d < b.minScheduleInterval {
-			b.addError(fmt.Sprintf("schedule interval %s is below minimum %s", d, b.minScheduleInterval))
+			b.addFieldError("schedule", fmt.Sprintf("schedule interval %s is below minimum %s", d, b.minScheduleInterval))
 			return
 		}
 	}
@@ -88,7 +89,7 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 	// can actually be registered.
 	parsed, err := cronParser.Parse(schedule)
 	if err != nil {
-		b.addError(fmt.Sprintf("invalid cron schedule %q: %v", schedule, err))
+		b.addFieldError("schedule", fmt.Sprintf("invalid cron schedule %q: %v", schedule, err))
 		return
 	}
 
@@ -96,7 +97,7 @@ func (b *CronJobBuilder) SetSchedule(schedule string) {
 	// between runs against the configured minimum.
 	if b.minScheduleInterval > 0 {
 		if gap := shortestInterval(parsed, time.Now()); gap > 0 && gap < b.minScheduleInterval {
-			b.addError(fmt.Sprintf("schedule %q runs every %s, below minimum %s", schedule, gap, b.minScheduleInterval))
+			b.addFieldError("schedule", fmt.Sprintf("schedule %q runs every %s, below minimum %s", schedule, gap, b.minScheduleInterval))
 			return
 		}
 	}
@@ -109,7 +110,7 @@ func (b *CronJobBuilder) SetCommand(command string) {
 	command = strings.TrimSpace(command)
 	command = trimOuterQuotes(command)
 	if command == "" {
-		b.addError("command cannot be empty")
+		b.addFieldError("cmd", "command cannot be empty")
 		return
 	}
 	b.command = command
@@ -191,24 +192,33 @@ func (b *CronJobBuilder) SetPingURL(value string) {
 	b.pingURL = value
 }
 
+// addFieldError records an error for an invalid label value of field.
+func (b *CronJobBuilder) addFieldError(field, err string) {
+	if b.invalidFields == nil {
+		b.invalidFields = make(map[string]bool)
+	}
+	b.invalidFields[field] = true
+	b.addError(err)
+}
+
 // addError adds an error to the builder's error collection
 func (b *CronJobBuilder) addError(err string) {
 	b.hasErrors = true
 	b.errors = append(b.errors, err)
 }
 
-// IsValid checks if the builder has all required fields and no errors
+// IsValid checks if the builder has all required fields and no errors.
+// Missing fields are reported even if a label was invalid, so that all
+// problems show up at once. A field whose label was set but invalid is not
+// reported a second time as missing.
 func (b *CronJobBuilder) IsValid() bool {
-	if b.hasErrors {
-		return false
-	}
-	if b.enabled == nil {
+	if b.enabled == nil && !b.invalidFields["enabled"] {
 		b.addError("enabled state not set")
 	}
-	if b.schedule == "" {
+	if b.schedule == "" && !b.invalidFields["schedule"] {
 		b.addError("schedule not set")
 	}
-	if b.command == "" {
+	if b.command == "" && !b.invalidFields["cmd"] {
 		b.addError("command not set")
 	}
 	if b.timezone != "" && hasTimezonePrefix(b.schedule) {
@@ -288,4 +298,5 @@ func (b *CronJobBuilder) Reset() {
 	b.pingURL = ""
 	b.hasErrors = false
 	b.errors = []string{}
+	b.invalidFields = nil
 }
