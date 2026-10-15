@@ -10,6 +10,16 @@ type CronListItem struct {
 	CronJob       CronJob `json:"cron_job"`
 }
 
+// GetLabelIssues returns the label problems of all running containers.
+func GetLabelIssues() []ContainerLabelIssue {
+	if m, ok := context.AppCtx.CronJobManager.(interface {
+		GetLabelIssues() []ContainerLabelIssue
+	}); ok {
+		return m.GetLabelIssues()
+	}
+	return []ContainerLabelIssue{}
+}
+
 // GetCronJobs returns a list of all cron jobs with their associated container info
 func GetCronJobs() []CronListItem {
 	allJobs := context.AppCtx.CronJobManager.GetAll()

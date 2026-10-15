@@ -38,7 +38,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Per-job configurable execution timeout
 - Per-job time zones, so schedules follow local time including daylight saving time
 - Per-job random start delay (jitter) to spread out jobs that share a schedule
-- HTTP API to list active cron jobs with last result and next run
+- HTTP API to list active cron jobs with last result and next run, and the label problems of running containers
 - CLI for management (`cron` to start, `cron-job list` to inspect, `validate` to check labels, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
 - Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
@@ -384,6 +384,43 @@ Without an API token, `command` and `ping_url` are redacted. `timezone` is inclu
 
 `status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
 
+### List Label Problems
+
+A job with invalid labels is not scheduled, so it does not appear in `/api/cron-job`. This endpoint lists those problems for all running containers, so a missing job is explained instead of silently absent:
+
+```bash
+curl http://127.0.0.1:8080/api/label-issues
+```
+
+Response:
+
+```json
+[
+  {
+    "container_id": "02c0a8bf4b6981903f9dff33db4f6ccda4ab7f218bc3cdc18e216f3bd2ddf630",
+    "container_name": "my-app",
+    "job": "report",
+    "message": "invalid cron schedule \"0 25 * * *\": end of range (25) above maximum (23): 25",
+    "job_rejected": true
+  },
+  {
+    "container_id": "02c0a8bf4b6981903f9dff33db4f6ccda4ab7f218bc3cdc18e216f3bd2ddf630",
+    "container_name": "my-app",
+    "job": "cleanup",
+    "label": "cronado.cleanup.timout",
+    "message": "unknown property \"timout\", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url",
+    "job_rejected": false
+  }
+]
+```
+
+- **`job_rejected: true`:** the job is not scheduled. A job can have several entries, one per problem.
+- **`job_rejected: false`:** only the named `label` is ignored. The job itself may still run, but probably not as intended.
+- **Lifetime:** problems are recorded when a container starts and removed when it stops. Fixing the labels means recreating the container, which also clears its entries.
+- The list is `[]` when there are no problems. Like `/api/cron-job`, it needs the API token if one is set.
+
+`cronado validate` reports the same problems before deployment; see [Checking labels before deployment](#checking-labels-before-deployment).
+
 ### Health Check
 
 `GET /healthz` needs no authentication. It returns `200` when cronado reaches the Docker daemon and is subscribed to its events, and `503` otherwise:
@@ -397,7 +434,7 @@ The Docker image runs `cronado healthcheck` as its `HEALTHCHECK`, which queries 
 ### CLI
 
 ```bash
-./cronado cron-job list                      # jobs registered in the running scheduler
+./cronado cron-job list                      # jobs registered in the running scheduler, plus label problems
 ./cronado validate -f docker-compose.yml     # check labels before deployment
 ./cronado validate                           # check labels of running containers
 ```
@@ -417,12 +454,20 @@ Prometheus metrics are available at `/metrics`:
 | `cronado_job_last_success_timestamp_seconds` | Gauge | Unix time of the last successful run (same labels)    |
 | `cronado_job_next_run_timestamp_seconds`     | Gauge | Unix time of the next scheduled run (same labels)     |
 | `cronado_job_running`                        | Gauge | `1` while the job runs, `0` otherwise (same labels)   |
+| `cronado_label_issues`                       | Gauge | Number of label problems of a running container (labels: `container_id`, `container_name`, `job_name`, `kind` = `rejected_job` or `ignored_label`); see [List Label Problems](#list-label-problems) |
 
 Alert when a job has not succeeded for a day:
 
 ```yaml
 - alert: CronadoJobNotSucceeding
   expr: time() - cronado_job_last_success_timestamp_seconds > 86400
+```
+
+Alert when a running container has invalid cron job labels:
+
+```yaml
+- alert: CronadoInvalidLabels
+  expr: sum by (container_name, job_name) (cronado_label_issues) > 0
 ```
 
 Prometheus scrape config:
@@ -517,7 +562,8 @@ If running as a non-root user on the host, you may need to add the user to the `
 - Verify labels follow the correct format: `cronado.<job-name>.<property>`
 - Check that `enabled` is set to `true`
 - Ensure `schedule` and `cmd` labels are present
-- Run `cronado validate` to list every label problem of the running containers
+- Run `cronado cron-job list` or `curl http://127.0.0.1:8080/api/label-issues` to see the label problems cronado found
+- Run `cronado validate` to check labels before deploying, or the labels of all running containers
 - Run with `CRONADO_LOG_LEVEL=debug` for detailed output
 
 ### Commands timing out

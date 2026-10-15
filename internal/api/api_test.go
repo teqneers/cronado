@@ -14,7 +14,15 @@ import (
 
 // mockCronJobManager implements context.CronJobManager for testing
 type mockCronJobManager struct {
-	jobs []domain.CronJob
+	jobs   []domain.CronJob
+	issues []domain.ContainerLabelIssue
+}
+
+func (m *mockCronJobManager) GetLabelIssues() []domain.ContainerLabelIssue {
+	if m.issues == nil {
+		return []domain.ContainerLabelIssue{}
+	}
+	return m.issues
 }
 
 func (m *mockCronJobManager) Add(_ interface{}, _ interface{}) error { return nil }
@@ -262,5 +270,40 @@ func TestGetCronJobList_RedactsPingURLWithoutToken(t *testing.T) {
 	item := getSingleJob(t, router, "")
 	if item.CronJob.PingURL != RedactedValue {
 		t.Errorf("expected redacted ping URL, got %q", item.CronJob.PingURL)
+	}
+}
+
+func TestGetLabelIssueList(t *testing.T) {
+	manager := &mockCronJobManager{issues: []domain.ContainerLabelIssue{{
+		ContainerID:   "abcdef123456",
+		ContainerName: "app",
+		Job:           "report",
+		Message:       "schedule not set",
+		JobRejected:   true,
+	}}}
+	router := setupTestRouter(manager)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/label-issues", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	want := `[{"container_id":"abcdef123456","container_name":"app","job":"report","message":"schedule not set","job_rejected":true}]`
+	if got := w.Body.String(); got != want {
+		t.Errorf("body = %s\nwant %s", got, want)
+	}
+}
+
+func TestGetLabelIssueList_EmptyIsArray(t *testing.T) {
+	router := setupTestRouter(&mockCronJobManager{})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/label-issues", nil)
+	router.ServeHTTP(w, req)
+
+	if got := w.Body.String(); got != "[]" {
+		t.Errorf("body = %s, want []", got)
 	}
 }
