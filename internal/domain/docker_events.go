@@ -77,6 +77,7 @@ func resyncAfterReconnect() {
 		GetCronJobManager().Remove(job.Container.ID)
 		removed[job.Container.ID] = true
 	}
+	GetCronJobManager().RetainLabelIssues(running)
 }
 
 // Event stream reconnect settings. After maxEventStreamFailures consecutive
@@ -198,7 +199,8 @@ func handleContainer(container *Container) {
 	ctx := cronadoCtx.AppCtx
 	cronLabelPrefix := ctx.Config.CronLabelPrefix
 
-	containerCrons := parseCronsFromContainer(container, cronLabelPrefix)
+	containerCrons, issues := parseAndLogLabels(container, cronLabelPrefix)
+	GetCronJobManager().SetLabelIssues(container, issues)
 
 	if len(containerCrons) == 0 {
 		slog.Debug("No relevant labels found for container", "container", container.DisplayName())
@@ -225,6 +227,13 @@ func handleContainer(container *Container) {
 // parseCronsFromContainer extracts cron job definitions from container labels
 // and logs every problem found.
 func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[string]CronJob {
+	jobs, _ := parseAndLogLabels(container, cronLabelPrefix)
+	return jobs
+}
+
+// parseAndLogLabels parses the cron job labels of container, logs every
+// problem found and returns the jobs and the problems.
+func parseAndLogLabels(container *Container, cronLabelPrefix string) (map[string]CronJob, []LabelIssue) {
 	var minScheduleInterval, maxTimeout time.Duration
 	if cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil {
 		minScheduleInterval = cronadoCtx.AppCtx.Config.MinScheduleInterval
@@ -257,7 +266,7 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 			"user", cronJob.User)
 	}
 
-	return jobs
+	return jobs, issues
 }
 
 // registerCronJob validates and registers a cron job using the context manager

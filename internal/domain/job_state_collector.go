@@ -15,6 +15,9 @@ var (
 		"Unix time of the next scheduled run of a cron job", jobStateLabels, nil)
 	runningDesc = prometheus.NewDesc("cronado_job_running",
 		"1 if the cron job is currently running, 0 otherwise", jobStateLabels, nil)
+	labelIssuesDesc = prometheus.NewDesc("cronado_label_issues",
+		"Number of problems in the cron job labels of a running container; kind is rejected_job or ignored_label",
+		[]string{"container_id", "container_name", "job_name", "kind"}, nil)
 )
 
 // JobStateCollector exposes the current state of every registered job. It
@@ -33,6 +36,7 @@ func (c *JobStateCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- lastSuccessDesc
 	ch <- nextRunDesc
 	ch <- runningDesc
+	ch <- labelIssuesDesc
 }
 
 func (c *JobStateCollector) Collect(ch chan<- prometheus.Metric) {
@@ -57,5 +61,22 @@ func (c *JobStateCollector) Collect(ch chan<- prometheus.Metric) {
 			running = 1
 		}
 		ch <- prometheus.MustNewConstMetric(runningDesc, prometheus.GaugeValue, running, labels...)
+	}
+
+	type issueKey struct{ containerID, containerName, job, kind string }
+	counts := make(map[issueKey]int)
+	for _, issue := range c.manager.GetLabelIssues() {
+		kind := "ignored_label"
+		if issue.JobRejected {
+			kind = "rejected_job"
+		}
+		shortID := issue.ContainerID
+		if len(shortID) > 12 {
+			shortID = shortID[:12]
+		}
+		counts[issueKey{shortID, issue.ContainerName, issue.Job, kind}]++
+	}
+	for k, n := range counts {
+		ch <- prometheus.MustNewConstMetric(labelIssuesDesc, prometheus.GaugeValue, float64(n), k.containerID, k.containerName, k.job, k.kind)
 	}
 }

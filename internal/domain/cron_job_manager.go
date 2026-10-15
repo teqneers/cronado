@@ -27,6 +27,8 @@ type CronJobManager struct {
 	initialized bool
 	mu          sync.RWMutex
 	jobs        map[string]*CronJob
+	// labelIssues holds the label problems of running containers, by container ID
+	labelIssues map[string][]ContainerLabelIssue
 	scheduler   Scheduler
 	executor    CommandExecutor
 	metrics     MetricsCollector
@@ -67,6 +69,7 @@ func NewCronJobManager(opts CronJobManagerOptions) *CronJobManager {
 	return &CronJobManager{
 		initialized: true,
 		jobs:        make(map[string]*CronJob),
+		labelIssues: make(map[string][]ContainerLabelIssue),
 		scheduler:   opts.Scheduler,
 		executor:    opts.Executor,
 		metrics:     opts.Metrics,
@@ -283,6 +286,8 @@ func (m *CronJobManager) removeJobTyped(job CronJob) {
 func (m *CronJobManager) Remove(containerID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	delete(m.labelIssues, containerID)
 
 	for jobID, job := range m.jobs {
 		if job.Container == nil || job.Container.ID != containerID {

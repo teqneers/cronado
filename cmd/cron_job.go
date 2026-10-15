@@ -24,47 +24,76 @@ var cronJobListCmd = &cobra.Command{
 	Short: "List all cron-jobs",
 	Long:  "List all cron-jobs",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg := context.AppCtx.Config
-		url := fmt.Sprintf("http://%s/api/cron-job", net.JoinHostPort(cfg.ServerConfig.Host, cfg.ServerConfig.Port))
-		req, err := http.NewRequest(http.MethodGet, url, nil)
-		if err != nil {
-			log.Fatalf("Failed to create request: %v", err)
-		}
-		if cfg.ServerConfig.APIToken != "" {
-			req.Header.Set("Authorization", "Bearer "+cfg.ServerConfig.APIToken)
-		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
+		var jobs []domain.CronListItem
+		if err := fetchAPI("/api/cron-job", &jobs); err != nil {
 			log.Fatalf("Failed to fetch cron jobs: %v", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			log.Fatalf("Failed to fetch cron jobs: %s", resp.Status)
-		}
-
-		var jobs []domain.CronListItem
-		if err := json.NewDecoder(resp.Body).Decode(&jobs); err != nil {
-			log.Fatalf("Failed to decode response: %v", err)
+		// An older scheduler without this endpoint answers 404; the job list
+		// is still useful on its own.
+		var issues []domain.ContainerLabelIssue
+		if err := fetchAPI("/api/label-issues", &issues); err != nil {
+			log.Printf("Failed to fetch label problems: %v", err)
 		}
 
 		if len(jobs) == 0 {
 			fmt.Println("No active cron jobs.")
-			return
+		} else {
+			fmt.Println("Active Container Cron Jobs:")
+			for _, job := range jobs {
+				containerDisplay := formatContainerDisplay(job.ContainerName, job.ContainerID)
+				fmt.Printf("- Container: %s | Entry ID: %d | Schedule: %s | Cmd: %s\n",
+					containerDisplay,
+					job.CronJob.SchedulerId,
+					job.CronJob.SchedulerSpec(),
+					job.CronJob.Command)
+			}
 		}
 
-		fmt.Println("Active Container Cron Jobs:")
-		for _, job := range jobs {
-			containerDisplay := formatContainerDisplay(job.ContainerName, job.ContainerID)
-			fmt.Printf("- Container: %s | Entry ID: %d | Schedule: %s | Cmd: %s\n",
-				containerDisplay,
-				job.CronJob.SchedulerId,
-				job.CronJob.SchedulerSpec(),
-				job.CronJob.Command)
+		if len(issues) > 0 {
+			fmt.Println("\nLabel Problems:")
+			for _, issue := range issues {
+				fmt.Printf("- Container: %s | %s\n",
+					formatContainerDisplay(issue.ContainerName, issue.ContainerID),
+					formatLabelIssue(issue))
+			}
 		}
-
 	},
+}
+
+// fetchAPI GETs path from the running scheduler and decodes the JSON
+// response into v.
+func fetchAPI(path string, v any) error {
+	cfg := context.AppCtx.Config
+	url := fmt.Sprintf("http://%s%s", net.JoinHostPort(cfg.ServerConfig.Host, cfg.ServerConfig.Port), path)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	if cfg.ServerConfig.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.ServerConfig.APIToken)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s", resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+		return fmt.Errorf("decoding response: %w", err)
+	}
+	return nil
+}
+
+// formatLabelIssue describes a label problem in one line.
+func formatLabelIssue(issue domain.ContainerLabelIssue) string {
+	if issue.JobRejected {
+		return fmt.Sprintf("job %s rejected: %s", issue.Job, issue.Message)
+	}
+	return fmt.Sprintf("label %s ignored: %s", issue.Label, issue.Message)
 }
 
 // formatContainerDisplay returns a user-friendly container display string

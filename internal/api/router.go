@@ -25,6 +25,7 @@ func SetupRouter() *gin.Engine {
 
 	api := r.Group("/api", authMiddleware)
 	api.GET("/cron-job", GetCronJobList)
+	api.GET("/label-issues", GetLabelIssueList)
 
 	return r
 }
