@@ -39,7 +39,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Per-job time zones, so schedules follow local time including daylight saving time
 - Per-job random start delay (jitter) to spread out jobs that share a schedule
 - HTTP API to list active cron jobs with last result and next run
-- CLI for management (`cron` to start, `cron-job list` to inspect, `healthcheck`)
+- CLI for management (`cron` to start, `cron-job list` to inspect, `validate` to check labels, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
 - Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
 - [Healthchecks.io](https://healthchecks.io)-compatible pings per job, to catch jobs that silently stop running
@@ -216,6 +216,44 @@ This job starts at a random time between :00 and :05 every hour. A new delay is 
 - **Stops and restarts:** if cronado shuts down or the container stops during the wait, the run is dropped and not executed.
 - **Timeout and pings:** the timeout starts when the command starts, not when the delay starts. Healthchecks pings are sent when the command starts, so allow for the jitter in the check's grace time.
 
+### Checking labels before deployment
+
+A mistake in a label, such as `0 25 * * *` or a typo like `timout`, only shows up in cronado's log once the container starts, and the job silently does not run. `cronado validate` checks the labels with the same rules the scheduler uses and lists every problem at once.
+
+Check the services of a Compose file before you deploy it. No Docker access is needed, so this also works in CI:
+
+```bash
+cronado validate -f docker-compose.yml
+cronado validate -f compose.yml -f compose.prod.yml   # merged like docker compose -f ... -f ...
+```
+
+Without `-f`, it checks all running containers on the host through the Docker socket, which shows what cronado sees right now:
+
+```bash
+docker exec cronado ./cronado validate
+```
+
+Example output:
+
+```
+app
+  ✓ cleanup: @daily (enabled)
+  ! cronado.cleanup.timout: unknown property "timout", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url (label ignored)
+  ✗ report: invalid cron schedule "0 25 * * *": end of range (25) above maximum (23): 25
+db (container my-db)
+  ✓ backup: 0 2 * * * (enabled)
+  ✓ vacuum: @weekly (disabled)
+
+Checked 2 containers: 3 jobs OK, 1 job rejected, 1 label ignored.
+```
+
+- **✓** the job is valid. Disabled jobs are listed too.
+- **✗** the job is rejected and will not run. All reasons are listed, e.g. an invalid value and a missing `schedule`.
+- **!** a single label is ignored, e.g. an unknown property or an invalid job name. The job itself may still run, but probably not as intended.
+- **Exit code:** `0` if nothing was found, `1` if any job was rejected or label ignored, `2` if the Compose file or Docker could not be read. Use it in CI to fail a deployment.
+- **Settings:** the label prefix, `CRONADO_MIN_SCHEDULE_INTERVAL` and `CRONADO_MAX_TIMEOUT` are read from the same config and environment as `cronado cron`. Run `validate` with the same settings as your scheduler, or limits like the minimum interval are not checked the same way. `docker exec cronado ./cronado validate` always uses the scheduler's own settings.
+- **Compose limits:** only `labels` and `container_name` are read. Variables like `${VAR}` are not substituted; `$$` is read as `$`. Run `docker compose config > resolved.yml` first if your labels use variables.
+
 ### Dead man's switch pings
 
 Failure notifications cannot tell you that a job stopped running altogether, for example because its container is gone. For that, give the job a `ping_url` from [Healthchecks.io](https://healthchecks.io) or a self-hosted Healthchecks instance:
@@ -359,8 +397,12 @@ The Docker image runs `cronado healthcheck` as its `HEALTHCHECK`, which queries 
 ### CLI
 
 ```bash
-./cronado cron-job list
+./cronado cron-job list                      # jobs registered in the running scheduler
+./cronado validate -f docker-compose.yml     # check labels before deployment
+./cronado validate                           # check labels of running containers
 ```
+
+See [Checking labels before deployment](#checking-labels-before-deployment) for `validate`.
 
 ## Metrics
 
@@ -475,6 +517,7 @@ If running as a non-root user on the host, you may need to add the user to the `
 - Verify labels follow the correct format: `cronado.<job-name>.<property>`
 - Check that `enabled` is set to `true`
 - Ensure `schedule` and `cmd` labels are present
+- Run `cronado validate` to list every label problem of the running containers
 - Run with `CRONADO_LOG_LEVEL=debug` for detailed output
 
 ### Commands timing out
