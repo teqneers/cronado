@@ -27,5 +27,10 @@ func SetupRouter() *gin.Engine {
 	api.GET("/cron-job", GetCronJobList)
 	api.GET("/label-issues", GetLabelIssueList)
 
+	write := api.Group("/cron-job/:id", RequireTokenMiddleware(apiToken))
+	write.POST("/run", RunCronJob)
+	write.POST("/pause", PauseCronJob)
+	write.POST("/resume", ResumeCronJob)
+
 	return r
 }

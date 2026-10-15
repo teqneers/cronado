@@ -39,6 +39,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Per-job time zones, so schedules follow local time including daylight saving time
 - Per-job random start delay (jitter) to spread out jobs that share a schedule
 - HTTP API to list active cron jobs with last result and next run, and the label problems of running containers
+- Run a job on demand, or pause and resume it, via API and CLI
 - CLI for management (`cron` to start, `cron-job list` to inspect, `validate` to check labels, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
 - Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
@@ -347,7 +348,7 @@ When a token is configured, all requests to `/api/*` and `/metrics` must include
 curl -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job
 ```
 
-When no token is set (the default), authentication is disabled and all endpoints are open. Job commands are then redacted in API responses, and Cronado logs a warning at startup if it listens on a non-loopback address. For network-exposed deployments, either set a token or place Cronado behind a reverse proxy with its own authentication.
+When no token is set (the default), authentication is disabled and all read endpoints are open. The endpoints that change state ([run, pause and resume](#run-pause-and-resume-jobs)) are then disabled and return `403`, because anyone who can reach the port could otherwise run commands in your containers. Job commands are redacted in API responses, and Cronado logs a warning at startup if it listens on a non-loopback address. For network-exposed deployments, either set a token or place Cronado behind a reverse proxy with its own authentication.
 
 ### List Active Jobs
 
@@ -362,6 +363,7 @@ Response:
   {
     "container_id": "abcdef123456",
     "cron_job": {
+      "id": "abcdef123456-backup",
       "name": "backup",
       "enabled": true,
       "schedule": "0 2 * * *",
@@ -369,6 +371,7 @@ Response:
       "user": "postgres",
       "timeout": 600000000000,
       "status": "idle",
+      "paused": false,
       "scheduler_id": 1,
       "last_run": "2026-10-13T02:00:00+02:00",
       "last_success": "2026-10-13T02:00:00+02:00",
@@ -382,7 +385,37 @@ Response:
 
 Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label.
 
-`status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
+`id` identifies the job in the [run, pause and resume](#run-pause-and-resume-jobs) endpoints. `status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
+
+### Run, Pause and Resume Jobs
+
+These endpoints change state, so they **require `server.api_token`**. Without a token they return `403`.
+
+```bash
+# Run a job now, e.g. to test it after deployment
+curl -X POST -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job/abcdef123456-backup/run
+
+# Skip the scheduled runs of a job, e.g. during maintenance
+curl -X POST -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job/abcdef123456-backup/pause
+curl -X POST -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job/abcdef123456-backup/resume
+```
+
+The job ID is the `id` field in `/api/cron-job`, or the `ID` column of `cronado cron-job list`. It is the short container ID plus the job name, so it changes when the container is recreated.
+
+**Run** (`202 Accepted`):
+
+- Starts the command immediately in the background and returns the job. The result appears in `last_result` once the command finishes.
+- Skips the [jitter](#spreading-start-times-jitter) delay and also works while the job is paused. Everything else is the same as a scheduled run: user, timeout, metrics, failure notifications and pings.
+- Returns `409 Conflict` if the job is already running or waiting out its jitter, so a job never runs twice at the same time.
+
+**Pause and resume** (`200 OK`):
+
+- A paused job skips its scheduled runs and logs `Skipping paused cron job` instead. It stays in the job list with `"paused": true` and without `next_run`.
+- Pausing does not stop a run that is already in progress.
+- Pausing and resuming are idempotent: pausing a paused job is not an error.
+- **The pause is not saved.** A restart of the container or of cronado resumes the job, because its labels are read again. To disable a job for good, set `cronado.<job>.enabled=false`.
+
+All three return `404` for an unknown job ID.
 
 ### List Label Problems
 
@@ -435,11 +468,14 @@ The Docker image runs `cronado healthcheck` as its `HEALTHCHECK`, which queries 
 
 ```bash
 ./cronado cron-job list                      # jobs registered in the running scheduler, plus label problems
+./cronado cron-job run <job-id>              # run a job now (needs server.api_token)
+./cronado cron-job pause <job-id>            # skip scheduled runs until resumed (needs server.api_token)
+./cronado cron-job resume <job-id>
 ./cronado validate -f docker-compose.yml     # check labels before deployment
 ./cronado validate                           # check labels of running containers
 ```
 
-See [Checking labels before deployment](#checking-labels-before-deployment) for `validate`.
+See [Checking labels before deployment](#checking-labels-before-deployment) for `validate` and [Run, Pause and Resume Jobs](#run-pause-and-resume-jobs) for the job actions. The CLI talks to the running scheduler with the `server.*` settings and the API token from its config or environment, so inside the cronado container it works as is: `docker exec cronado ./cronado cron-job list`.
 
 ## Metrics
 
@@ -454,6 +490,7 @@ Prometheus metrics are available at `/metrics`:
 | `cronado_job_last_success_timestamp_seconds` | Gauge | Unix time of the last successful run (same labels)    |
 | `cronado_job_next_run_timestamp_seconds`     | Gauge | Unix time of the next scheduled run (same labels)     |
 | `cronado_job_running`                        | Gauge | `1` while the job runs, `0` otherwise (same labels)   |
+| `cronado_job_paused`                         | Gauge | `1` while the job is paused, `0` otherwise (same labels) |
 | `cronado_label_issues`                       | Gauge | Number of label problems of a running container (labels: `container_id`, `container_name`, `job_name`, `kind` = `rejected_job` or `ignored_label`); see [List Label Problems](#list-label-problems) |
 
 Alert when a job has not succeeded for a day:
@@ -468,6 +505,14 @@ Alert when a running container has invalid cron job labels:
 ```yaml
 - alert: CronadoInvalidLabels
   expr: sum by (container_name, job_name) (cronado_label_issues) > 0
+```
+
+Alert when a job was paused and then forgotten:
+
+```yaml
+- alert: CronadoJobPausedTooLong
+  expr: cronado_job_paused == 1
+  for: 24h
 ```
 
 Prometheus scrape config:

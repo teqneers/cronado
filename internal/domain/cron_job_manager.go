@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -40,7 +41,16 @@ type CronJobManager struct {
 	stopOnce sync.Once
 	// jitterDelay picks the delay for a run with the given maximum jitter.
 	jitterDelay func(maxJitter time.Duration) time.Duration
+	// manualRuns tracks runs started by RunNow, which the scheduler does not
+	// know about, so that Stop can wait for them.
+	manualRuns sync.WaitGroup
 }
+
+// Errors returned by RunNow and SetPaused.
+var (
+	ErrJobNotFound = errors.New("cron job not found")
+	ErrJobBusy     = errors.New("cron job is already running")
+)
 
 // CronJobManagerOptions contains configuration options for CronJobManager
 type CronJobManagerOptions struct {
@@ -138,6 +148,11 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 		m.mu.Unlock()
 		return
 	}
+	if currentJob.Paused {
+		slog.Info("Skipping paused cron job", "job_id", job.ID, "container", container.DisplayName(), "cron_job", job.Name)
+		m.mu.Unlock()
+		return
+	}
 	if !currentJob.IsIdle() {
 		slog.Warn("Skipping cron job execution - already running", "job_id", job.ID, "status", currentJob.Status)
 		m.mu.Unlock()
@@ -164,7 +179,59 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 	currentJob.SetRunning()
 	m.mu.Unlock()
 
-	// Execute the command
+	m.runCommand(container, job)
+}
+
+// RunNow starts a job immediately, without jitter and also while it is
+// paused. The command runs in the background; RunNow returns ErrJobBusy if
+// the job is already running or waiting out its jitter.
+func (m *CronJobManager) RunNow(jobID string) error {
+	m.mu.Lock()
+	job, exists := m.jobs[jobID]
+	if !exists {
+		m.mu.Unlock()
+		return ErrJobNotFound
+	}
+	if !job.IsIdle() {
+		m.mu.Unlock()
+		return ErrJobBusy
+	}
+	job.SetRunning()
+	container := job.Container
+	m.manualRuns.Add(1)
+	m.mu.Unlock()
+
+	slog.Info("Cron job triggered manually", "job_id", jobID, "container", container.DisplayName(), "cron_job", job.Name)
+	go func() {
+		defer m.manualRuns.Done()
+		m.runCommand(container, job)
+	}()
+	return nil
+}
+
+// SetPaused pauses or resumes the scheduled runs of a job.
+func (m *CronJobManager) SetPaused(jobID string, paused bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[jobID]
+	if !exists {
+		return ErrJobNotFound
+	}
+	if job.Paused != paused {
+		job.Paused = paused
+		action := "Cron job resumed"
+		if paused {
+			action = "Cron job paused"
+		}
+		slog.Info(action, "job_id", jobID, "container", job.GetContainerDisplayName(), "cron_job", job.Name)
+	}
+	return nil
+}
+
+// runCommand executes a job that has already been marked as running and
+// records the result.
+func (m *CronJobManager) runCommand(container *Container, job *CronJob) {
 	startTime := time.Now()
 	slog.Info("Executing cron job",
 		"job_id", job.ID,
@@ -333,7 +400,8 @@ func (m *CronJobManager) GetAllTyped() []CronJob {
 	result := make([]CronJob, 0, len(m.jobs))
 	for _, job := range m.jobs {
 		jobCopy := *job
-		if next, ok := nextRuns[job.SchedulerId]; ok {
+		// A paused job has no next run, even though the scheduler keeps it.
+		if next, ok := nextRuns[job.SchedulerId]; ok && !job.Paused {
 			jobCopy.NextRun = &next
 		}
 		result = append(result, jobCopy)
@@ -375,6 +443,7 @@ func (m *CronJobManager) Stop() {
 		// Wait for stop to complete
 		<-ctx.Done()
 	}
+	m.manualRuns.Wait()
 }
 
 // Shutdown is an alias for Stop

@@ -18,19 +18,22 @@ const (
 )
 
 type CronJob struct {
-	ID          string        `json:"id"`
-	Name        string        `json:"name"`
-	Container   *Container    `json:"-"`
-	Enabled     bool          `json:"enabled"`
-	Schedule    string        `json:"schedule"`
-	Command     string        `json:"command"`
-	User        string        `json:"user"`
-	Timezone    string        `json:"timezone,omitempty"`
-	Timeout     time.Duration `json:"timeout"`
-	Jitter      time.Duration `json:"jitter,omitempty"`
-	PingURL     string        `json:"ping_url,omitempty"`
-	Status      string        `json:"status"`
-	SchedulerId cron.EntryID  `json:"scheduler_id"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	Container *Container    `json:"-"`
+	Enabled   bool          `json:"enabled"`
+	Schedule  string        `json:"schedule"`
+	Command   string        `json:"command"`
+	User      string        `json:"user"`
+	Timezone  string        `json:"timezone,omitempty"`
+	Timeout   time.Duration `json:"timeout"`
+	Jitter    time.Duration `json:"jitter,omitempty"`
+	PingURL   string        `json:"ping_url,omitempty"`
+	Status    string        `json:"status"`
+	// Paused jobs skip their scheduled runs until resumed. Not persisted:
+	// a restart of the container or of cronado resumes the job.
+	Paused      bool         `json:"paused"`
+	SchedulerId cron.EntryID `json:"scheduler_id"`
 
 	// Execution state, updated after every run
 	LastRun      *time.Time `json:"last_run,omitempty"`
