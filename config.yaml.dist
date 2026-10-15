@@ -7,6 +7,9 @@ cron_label_prefix: "cronado"
 min_schedule_interval: "1m"
 # Maximum allowed timeout for job execution
 max_timeout: "12h"
+# How long to wait for running jobs when cronado stops; keep it below Docker's
+# stop grace period (10s by default, stop_grace_period in Compose)
+shutdown_timeout: "8s"
 daemon_watcher:
   enabled: true
   timeout_seconds: 5

@@ -54,7 +54,9 @@ var cronCmd = &cobra.Command{
 		}
 
 		// Initialize CronJobManager in the context
-		cronJobManager := domain.NewCronJobManager(domain.CronJobManagerOptions{})
+		cronJobManager := domain.NewCronJobManager(domain.CronJobManagerOptions{
+			ShutdownTimeout: config.ShutdownTimeout,
+		})
 		cronJobManager.Start()
 		context.AppCtx.CronJobManager = cronJobManager
 		prometheus.MustRegister(domain.NewJobStateCollector(cronJobManager))

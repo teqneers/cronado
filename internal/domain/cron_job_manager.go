@@ -44,12 +44,15 @@ type CronJobManager struct {
 	// manualRuns tracks runs started by RunNow, which the scheduler does not
 	// know about, so that Stop can wait for them.
 	manualRuns sync.WaitGroup
+	// shutdownTimeout limits how long Stop waits for running jobs.
+	shutdownTimeout time.Duration
 }
 
 // Errors returned by RunNow and SetPaused.
 var (
-	ErrJobNotFound = errors.New("cron job not found")
-	ErrJobBusy     = errors.New("cron job is already running")
+	ErrJobNotFound  = errors.New("cron job not found")
+	ErrJobBusy      = errors.New("cron job is already running")
+	ErrShuttingDown = errors.New("cronado is shutting down")
 )
 
 // CronJobManagerOptions contains configuration options for CronJobManager
@@ -58,6 +61,9 @@ type CronJobManagerOptions struct {
 	Executor  CommandExecutor
 	Metrics   MetricsCollector
 	Notifier  NotificationService
+	// ShutdownTimeout limits how long Stop waits for running jobs. Zero
+	// waits until all of them finished.
+	ShutdownTimeout time.Duration
 }
 
 // NewCronJobManager creates a new CronJobManager with dependency injection
@@ -86,6 +92,8 @@ func NewCronJobManager(opts CronJobManagerOptions) *CronJobManager {
 		notifier:    opts.Notifier,
 		stopping:    make(chan struct{}),
 		jitterDelay: randomJitter,
+
+		shutdownTimeout: opts.ShutdownTimeout,
 	}
 }
 
@@ -187,6 +195,10 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 // the job is already running or waiting out its jitter.
 func (m *CronJobManager) RunNow(jobID string) error {
 	m.mu.Lock()
+	if m.isStopping() {
+		m.mu.Unlock()
+		return ErrShuttingDown
+	}
 	job, exists := m.jobs[jobID]
 	if !exists {
 		m.mu.Unlock()
@@ -435,15 +447,68 @@ func (m *CronJobManager) Start() {
 	m.scheduler.Start()
 }
 
-// Stop stops the cron scheduler
+// Stop stops scheduling new runs and waits for running jobs. Runs waiting
+// out their jitter are cancelled. With a shutdown timeout, Stop gives up
+// waiting after it and logs the jobs that were still running; their commands
+// keep running inside the containers, but their results are not recorded.
 func (m *CronJobManager) Stop() {
+	m.mu.Lock()
 	m.stopOnce.Do(func() { close(m.stopping) })
-	ctx := m.scheduler.Stop()
-	if ctx != nil {
-		// Wait for stop to complete
-		<-ctx.Done()
+	m.mu.Unlock()
+
+	if running := m.runningJobs(); len(running) > 0 {
+		slog.Info("Waiting for running cron jobs to finish", "jobs", len(running), "timeout", m.shutdownTimeout)
 	}
-	m.manualRuns.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		if ctx := m.scheduler.Stop(); ctx != nil {
+			<-ctx.Done()
+		}
+		m.manualRuns.Wait()
+		close(done)
+	}()
+
+	if m.shutdownTimeout <= 0 {
+		<-done
+		return
+	}
+	timer := time.NewTimer(m.shutdownTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		for _, job := range m.runningJobs() {
+			slog.Warn("Shutdown timeout reached, abandoning running cron job; its command keeps running in the container but the result is not recorded",
+				"job_id", job.ID,
+				"container", job.GetContainerDisplayName(),
+				"cron_job", job.Name,
+				"timeout", m.shutdownTimeout)
+		}
+	}
+}
+
+// runningJobs returns copies of the jobs whose command is running.
+func (m *CronJobManager) runningJobs() []CronJob {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []CronJob
+	for _, job := range m.jobs {
+		if job.IsRunning() {
+			result = append(result, *job)
+		}
+	}
+	return result
+}
+
+// isStopping reports whether Stop was called. The caller must hold m.mu.
+func (m *CronJobManager) isStopping() bool {
+	select {
+	case <-m.stopping:
+		return true
+	default:
+		return false
+	}
 }
 
 // Shutdown is an alias for Stop
