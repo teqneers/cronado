@@ -71,6 +71,7 @@ type Config struct {
 	CronLabelPrefix     string
 	MinScheduleInterval time.Duration // minimum allowed schedule interval (default 1m)
 	MaxTimeout          time.Duration // maximum allowed job timeout (default 12h)
+	ShutdownTimeout     time.Duration // how long to wait for running jobs on shutdown (default 8s)
 	// PingAllowPrivateNetworks lets ping_url labels reach private and loopback
 	// addresses, e.g. a self-hosted Healthchecks instance (default false)
 	PingAllowPrivateNetworks bool
@@ -93,6 +94,7 @@ func LoadConfig() *Config {
 	viper.SetDefault("cron_label_prefix", "cronado")
 	viper.SetDefault("min_schedule_interval", "1m")
 	viper.SetDefault("max_timeout", "12h")
+	viper.SetDefault("shutdown_timeout", "8s")
 	viper.SetDefault("ping.allow_private_networks", false)
 
 	// set default values for the daemon watcher
@@ -165,12 +167,18 @@ func LoadConfig() *Config {
 		log.Printf("Invalid max_timeout, using default 12h: %v", err)
 		maxTimeout = 12 * time.Hour
 	}
+	shutdownTimeout, err := time.ParseDuration(viper.GetString("shutdown_timeout"))
+	if err != nil || shutdownTimeout < 0 {
+		log.Printf("Invalid shutdown_timeout, using default 8s: %v", err)
+		shutdownTimeout = 8 * time.Second
+	}
 
 	return &Config{
 		AppName:                  viper.GetString("app_name"),
 		CronLabelPrefix:          viper.GetString("cron_label_prefix"),
 		MinScheduleInterval:      minScheduleInterval,
 		MaxTimeout:               maxTimeout,
+		ShutdownTimeout:          shutdownTimeout,
 		PingAllowPrivateNetworks: viper.GetBool("ping.allow_private_networks"),
 		DaemonWatcher: DaemonWatcher{
 			Enabled: viper.GetBool("daemon_watcher.enabled"),

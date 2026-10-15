@@ -290,6 +290,7 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_SERVER_API_TOKEN`               | Bearer token for API/metrics auth    | — (disabled)      |
 | `CRONADO_MIN_SCHEDULE_INTERVAL`          | Minimum interval between runs        | `1m`              |
 | `CRONADO_MAX_TIMEOUT`                    | Maximum allowed job timeout          | `12h`             |
+| `CRONADO_SHUTDOWN_TIMEOUT`               | How long to wait for running jobs when cronado stops; see [Stopping and updating cronado](#stopping-and-updating-cronado) | `8s` |
 | `CRONADO_PING_ALLOW_PRIVATE_NETWORKS`    | Allow `ping_url` to reach private/loopback addresses | `false` |
 | `CRONADO_DAEMON_WATCHER_ENABLED`         | Docker daemon health monitoring      | `true`            |
 | `CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS` | Health check interval                | `5`               |
@@ -525,6 +526,29 @@ scrape_configs:
 ```
 
 ## Advanced Setup
+
+### Stopping and updating cronado
+
+When cronado stops, for example on `docker stop` or a Watchtower update, it:
+
+1. Stops starting new runs. Runs still waiting out their [jitter](#spreading-start-times-jitter) are dropped, and manual runs are refused with `503`.
+2. Waits for running jobs to finish, for at most `shutdown_timeout` (default `8s`). Their results, notifications and pings are recorded as usual.
+3. Exits. Jobs still running at that point are logged as `Shutdown timeout reached, abandoning running cron job`.
+
+An abandoned command is **not** killed. It keeps running inside its container until it finishes or reaches its own `timeout`, but cronado does not record its result, send a notification or send the final [ping](#dead-mans-switch-pings). With a `ping_url`, Healthchecks reports the run as started but never finished, so it does not go unnoticed.
+
+Docker kills a container that has not stopped after its stop grace period, 10 seconds by default. The default `shutdown_timeout` of `8s` fits inside that. If your jobs run longer and should finish before an update, raise both, keeping the grace period a few seconds above the timeout:
+
+```yaml
+services:
+  cronado:
+    image: ghcr.io/teqneers/cronado:latest
+    stop_grace_period: 5m
+    environment:
+      CRONADO_SHUTDOWN_TIMEOUT: "4m50s"
+```
+
+`shutdown_timeout: "0s"` waits for running jobs without a limit, which only makes sense outside Docker or with an equally unlimited grace period.
 
 ### Docker Socket Proxy
 

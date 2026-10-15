@@ -96,6 +96,11 @@ func TestRunCronJob_Errors(t *testing.T) {
 	if w := post(router, "/api/cron-job/abcdef123456-backup/run", testToken); w.Code != http.StatusConflict {
 		t.Errorf("busy job: status = %d, want 409", w.Code)
 	}
+
+	manager.runErr = domain.ErrShuttingDown
+	if w := post(router, "/api/cron-job/abcdef123456-backup/run", testToken); w.Code != http.StatusServiceUnavailable {
+		t.Errorf("shutting down: status = %d, want 503", w.Code)
+	}
 }
 
 func TestPauseAndResumeCronJob(t *testing.T) {
