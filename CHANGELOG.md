@@ -13,9 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `jitter` label to delay each run by a random amount up to the given duration, e.g. `cronado.<job>.jitter=2m`, so jobs sharing a schedule do not all start at once. The jitter must be shorter than the schedule interval. While waiting, the job's status is `pending`, and a shutdown cancels the wait. See [Spreading start times](README.md#spreading-start-times-jitter)
 - `GET /api/label-issues` lists rejected jobs and ignored labels of running containers with the reason, and `cronado cron-job list` shows them. See [List Label Problems](README.md#list-label-problems)
 - `cronado_label_issues` metric (labels `container_id`, `container_name`, `job_name`, `kind`) to alert on invalid labels
+- `POST /api/cron-job/{id}/run`, `/pause` and `/resume` to run a job now or skip its scheduled runs, and matching `cronado cron-job run|pause|resume <job-id>` commands. They require `server.api_token` and return `403` without it. Pauses are kept in memory only. See [Run, Pause and Resume Jobs](README.md#run-pause-and-resume-jobs)
+- `cronado_job_paused` metric and `paused` field in `/api/cron-job`
 - `cronado validate` command to check cron job labels with the scheduler's own rules. `-f` checks the services of one or more Compose files without Docker access, e.g. in CI; without `-f`, it checks all running containers. Exits with `1` if any problem is found. See [Checking labels before deployment](README.md#checking-labels-before-deployment)
 
 ### Changed
+
+- `cronado cron-job list` shows the job ID (needed for run, pause and resume) instead of the internal scheduler entry ID, and marks paused jobs
+- `cronado cron-job list` connects via loopback when the server listens on `0.0.0.0` or `::`, like `cronado healthcheck`
 
 - A job with an invalid label now reports all problems at once, including missing required labels, instead of only the first error
 - Ignored labels (unknown property, invalid label format or job name) are logged with a consistent `Ignoring invalid cron job label` message

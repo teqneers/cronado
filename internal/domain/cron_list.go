@@ -10,6 +10,38 @@ type CronListItem struct {
 	CronJob       CronJob `json:"cron_job"`
 }
 
+// jobController is implemented by managers that can trigger and pause jobs.
+type jobController interface {
+	RunNow(jobID string) error
+	SetPaused(jobID string, paused bool) error
+}
+
+// RunJob starts the job with the given ID immediately.
+func RunJob(jobID string) error {
+	if m, ok := context.AppCtx.CronJobManager.(jobController); ok {
+		return m.RunNow(jobID)
+	}
+	return ErrJobNotFound
+}
+
+// PauseJob pauses or resumes the scheduled runs of the job with the given ID.
+func PauseJob(jobID string, paused bool) error {
+	if m, ok := context.AppCtx.CronJobManager.(jobController); ok {
+		return m.SetPaused(jobID, paused)
+	}
+	return ErrJobNotFound
+}
+
+// GetCronJob returns the list entry of the job with the given ID.
+func GetCronJob(jobID string) (CronListItem, bool) {
+	for _, item := range GetCronJobs() {
+		if item.CronJob.ID == jobID {
+			return item, true
+		}
+	}
+	return CronListItem{}, false
+}
+
 // GetLabelIssues returns the label problems of all running containers.
 func GetLabelIssues() []ContainerLabelIssue {
 	if m, ok := context.AppCtx.CronJobManager.(interface {

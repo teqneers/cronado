@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,13 +27,13 @@ var cronJobListCmd = &cobra.Command{
 	Long:  "List all cron-jobs",
 	Run: func(cmd *cobra.Command, args []string) {
 		var jobs []domain.CronListItem
-		if err := fetchAPI("/api/cron-job", &jobs); err != nil {
+		if err := callAPI(http.MethodGet, "/api/cron-job", &jobs); err != nil {
 			log.Fatalf("Failed to fetch cron jobs: %v", err)
 		}
 		// An older scheduler without this endpoint answers 404; the job list
 		// is still useful on its own.
 		var issues []domain.ContainerLabelIssue
-		if err := fetchAPI("/api/label-issues", &issues); err != nil {
+		if err := callAPI(http.MethodGet, "/api/label-issues", &issues); err != nil {
 			log.Printf("Failed to fetch label problems: %v", err)
 		}
 
@@ -41,11 +43,16 @@ var cronJobListCmd = &cobra.Command{
 			fmt.Println("Active Container Cron Jobs:")
 			for _, job := range jobs {
 				containerDisplay := formatContainerDisplay(job.ContainerName, job.ContainerID)
-				fmt.Printf("- Container: %s | Entry ID: %d | Schedule: %s | Cmd: %s\n",
+				paused := ""
+				if job.CronJob.Paused {
+					paused = " | PAUSED"
+				}
+				fmt.Printf("- Container: %s | ID: %s | Schedule: %s | Cmd: %s%s\n",
 					containerDisplay,
-					job.CronJob.SchedulerId,
+					job.CronJob.ID,
 					job.CronJob.SchedulerSpec(),
-					job.CronJob.Command)
+					job.CronJob.Command,
+					paused)
 			}
 		}
 
@@ -60,12 +67,12 @@ var cronJobListCmd = &cobra.Command{
 	},
 }
 
-// fetchAPI GETs path from the running scheduler and decodes the JSON
-// response into v.
-func fetchAPI(path string, v any) error {
+// callAPI sends a request to the running scheduler and decodes the JSON
+// response into v, if v is not nil.
+func callAPI(method, path string, v any) error {
 	cfg := context.AppCtx.Config
-	url := fmt.Sprintf("http://%s%s", net.JoinHostPort(cfg.ServerConfig.Host, cfg.ServerConfig.Port), path)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("http://%s%s", net.JoinHostPort(localHost(cfg.ServerConfig.Host), cfg.ServerConfig.Port), path)
+	req, err := http.NewRequest(method, endpoint, nil)
 	if err != nil {
 		return err
 	}
@@ -79,8 +86,17 @@ func fetchAPI(path string, v any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		var apiErr struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&apiErr) == nil && apiErr.Error != "" {
+			return fmt.Errorf("%s: %s", resp.Status, apiErr.Error)
+		}
 		return fmt.Errorf("%s", resp.Status)
+	}
+	if v == nil {
+		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
 		return fmt.Errorf("decoding response: %w", err)
@@ -110,7 +126,28 @@ func formatContainerDisplay(containerName, containerID string) string {
 }
 
 // Register the config command
+// jobActionCmd returns a command that POSTs to /api/cron-job/<id>/<action>.
+func jobActionCmd(action, short, done string) *cobra.Command {
+	return &cobra.Command{
+		Use:   action + " <job-id>",
+		Short: short,
+		Long:  short + ". Needs server.api_token. Job IDs are shown by 'cronado cron-job list'.",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			jobID := args[0]
+			if err := callAPI(http.MethodPost, "/api/cron-job/"+url.PathEscape(jobID)+"/"+action, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to %s %s: %v\n", action, jobID, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s %s\n", done, jobID)
+		},
+	}
+}
+
 func init() {
 	cronJobCmd.AddCommand(cronJobListCmd)
+	cronJobCmd.AddCommand(jobActionCmd("run", "Run a cron job now", "Started"))
+	cronJobCmd.AddCommand(jobActionCmd("pause", "Pause the scheduled runs of a cron job", "Paused"))
+	cronJobCmd.AddCommand(jobActionCmd("resume", "Resume the scheduled runs of a paused cron job", "Resumed"))
 	rootCmd.AddCommand(cronJobCmd)
 }

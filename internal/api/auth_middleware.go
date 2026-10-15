@@ -33,6 +33,19 @@ func BearerAuthMiddleware(token string) gin.HandlerFunc {
 	}
 }
 
+// RequireTokenMiddleware rejects all requests when no API token is
+// configured, so endpoints that change state are never open to anyone who can
+// reach the port. Use it together with BearerAuthMiddleware.
+func RequireTokenMiddleware(token string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "write endpoints are disabled, set server.api_token to enable them"})
+			return
+		}
+		c.Next()
+	}
+}
+
 // tokensEqual compares two tokens in constant time. Hashing first makes the
 // comparison independent of the token lengths as well.
 func tokensEqual(a, b string) bool {

@@ -16,6 +16,45 @@ import (
 type mockCronJobManager struct {
 	jobs   []domain.CronJob
 	issues []domain.ContainerLabelIssue
+	runErr error
+	ran    []string
+	paused map[string]bool
+}
+
+func (m *mockCronJobManager) RunNow(jobID string) error {
+	if m.runErr != nil {
+		return m.runErr
+	}
+	if !m.has(jobID) {
+		return domain.ErrJobNotFound
+	}
+	m.ran = append(m.ran, jobID)
+	return nil
+}
+
+func (m *mockCronJobManager) SetPaused(jobID string, paused bool) error {
+	if !m.has(jobID) {
+		return domain.ErrJobNotFound
+	}
+	if m.paused == nil {
+		m.paused = make(map[string]bool)
+	}
+	m.paused[jobID] = paused
+	for i := range m.jobs {
+		if m.jobs[i].ID == jobID {
+			m.jobs[i].Paused = paused
+		}
+	}
+	return nil
+}
+
+func (m *mockCronJobManager) has(jobID string) bool {
+	for _, job := range m.jobs {
+		if job.ID == jobID {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *mockCronJobManager) GetLabelIssues() []domain.ContainerLabelIssue {

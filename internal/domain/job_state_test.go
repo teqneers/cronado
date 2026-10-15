@@ -197,9 +197,9 @@ func TestJobStateCollector(t *testing.T) {
 	runJobOnce(t, manager, scheduler, container, createTestCronJob(container))
 
 	collector := NewJobStateCollector(manager)
-	// last_run, last_success, next_run and running for one job
-	if n := testutil.CollectAndCount(collector); n != 4 {
-		t.Errorf("collected %d metrics, want 4", n)
+	// last_run, last_success, next_run, running and paused for one job
+	if n := testutil.CollectAndCount(collector); n != 5 {
+		t.Errorf("collected %d metrics, want 5", n)
 	}
 	if n := testutil.CollectAndCount(collector, "cronado_job_running"); n != 1 {
 		t.Errorf("collected %d running metrics, want 1", n)
