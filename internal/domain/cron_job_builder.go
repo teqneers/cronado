@@ -30,6 +30,7 @@ type CronJobBuilder struct {
 	timeout             time.Duration
 	jitter              time.Duration
 	pingURL             string
+	replicas            string
 	minScheduleInterval time.Duration
 	maxTimeout          time.Duration
 	hasErrors           bool
@@ -43,6 +44,7 @@ func NewCronJobBuilder(name string, container *Container, minScheduleInterval, m
 		name:                name,
 		container:           container,
 		timeout:             DefaultTimeout,
+		replicas:            ReplicasOnce,
 		minScheduleInterval: minScheduleInterval,
 		maxTimeout:          maxTimeout,
 	}
@@ -178,6 +180,20 @@ func (b *CronJobBuilder) SetJitter(value string) {
 	b.jitter = d
 }
 
+// SetReplicas sets whether the job of a Compose service with several
+// replicas runs on one replica ("once", the default) or on each ("all").
+func (b *CronJobBuilder) SetReplicas(value string) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "":
+		return
+	case ReplicasOnce, ReplicasAll:
+		b.replicas = value
+	default:
+		b.addError(fmt.Sprintf("invalid replicas value: %s (expected once or all)", value))
+	}
+}
+
 // SetPingURL sets a Healthchecks.io-compatible URL that is pinged when the job
 // starts, succeeds or fails.
 func (b *CronJobBuilder) SetPingURL(value string) {
@@ -266,6 +282,7 @@ func (b *CronJobBuilder) Build() (*CronJob, error) {
 		Timeout:     b.timeout,
 		Jitter:      b.jitter,
 		PingURL:     b.pingURL,
+		Replicas:    b.replicas,
 		Status:      StatusIdle,
 		SchedulerId: -1,
 	}, nil
@@ -296,6 +313,7 @@ func (b *CronJobBuilder) Reset() {
 	b.timeout = DefaultTimeout
 	b.jitter = 0
 	b.pingURL = ""
+	b.replicas = ReplicasOnce
 	b.hasErrors = false
 	b.errors = []string{}
 	b.invalidFields = nil

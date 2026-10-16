@@ -17,6 +17,8 @@ var (
 		"1 if the cron job is currently running, 0 otherwise", jobStateLabels, nil)
 	pausedDesc = prometheus.NewDesc("cronado_job_paused",
 		"1 if the cron job is paused, 0 otherwise", jobStateLabels, nil)
+	standbyDesc = prometheus.NewDesc("cronado_job_standby",
+		"1 if another replica of the Compose service runs this cron job, 0 otherwise", jobStateLabels, nil)
 	labelIssuesDesc = prometheus.NewDesc("cronado_label_issues",
 		"Number of problems in the cron job labels of a running container; kind is rejected_job or ignored_label",
 		[]string{"container_id", "container_name", "job_name", "kind"}, nil)
@@ -39,6 +41,7 @@ func (c *JobStateCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nextRunDesc
 	ch <- runningDesc
 	ch <- pausedDesc
+	ch <- standbyDesc
 	ch <- labelIssuesDesc
 }
 
@@ -69,6 +72,11 @@ func (c *JobStateCollector) Collect(ch chan<- prometheus.Metric) {
 			paused = 1
 		}
 		ch <- prometheus.MustNewConstMetric(pausedDesc, prometheus.GaugeValue, paused, labels...)
+		standby := 0.0
+		if job.Standby {
+			standby = 1
+		}
+		ch <- prometheus.MustNewConstMetric(standbyDesc, prometheus.GaugeValue, standby, labels...)
 	}
 
 	type issueKey struct{ containerID, containerName, job, kind string }

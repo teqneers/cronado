@@ -17,6 +17,12 @@ const (
 	StatusRunning = "running"
 )
 
+// Values of the replicas label
+const (
+	ReplicasOnce = "once" // one replica of a Compose service runs the job
+	ReplicasAll  = "all"  // every replica runs the job
+)
+
 type CronJob struct {
 	ID        string        `json:"id"`
 	Name      string        `json:"name"`
@@ -29,10 +35,14 @@ type CronJob struct {
 	Timeout   time.Duration `json:"timeout"`
 	Jitter    time.Duration `json:"jitter,omitempty"`
 	PingURL   string        `json:"ping_url,omitempty"`
+	Replicas  string        `json:"replicas,omitempty"`
 	Status    string        `json:"status"`
 	// Paused jobs skip their scheduled runs until resumed. Not persisted:
 	// a restart of the container or of cronado resumes the job.
-	Paused      bool         `json:"paused"`
+	Paused bool `json:"paused"`
+	// Standby jobs belong to a Compose replica whose scheduled runs are left
+	// to another replica of the same service (see Replicas).
+	Standby     bool         `json:"standby,omitempty"`
 	SchedulerId cron.EntryID `json:"scheduler_id"`
 
 	// Execution state, updated after every run

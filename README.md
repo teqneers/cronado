@@ -40,6 +40,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Per-job random start delay (jitter) to spread out jobs that share a schedule
 - HTTP API to list active cron jobs with last result and next run, and the label problems of running containers
 - Run a job on demand, or pause and resume it, via API and CLI
+- Jobs of a Compose service with several replicas run on one replica only, with automatic takeover
 - CLI for management (`cron` to start, `cron-job list` to inspect, `validate` to check labels, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
 - Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
@@ -130,6 +131,7 @@ cronado.<job-name>.timezone=Europe/Berlin
 cronado.<job-name>.timeout=5m
 cronado.<job-name>.jitter=2m
 cronado.<job-name>.ping_url=https://hc-ping.com/<uuid>
+cronado.<job-name>.replicas=once|all
 ```
 
 Each job needs at least `enabled`, `schedule`, and `cmd`. The prefix can be changed via `CRONADO_CRON_LABEL_PREFIX`.
@@ -198,6 +200,7 @@ This job runs at 2:00 AM Berlin time all year: 00:00 UTC in summer and 01:00 UTC
 | `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
 | `jitter`   | No       | —       | Random delay of up to this duration before each run (e.g., `2m`); must be shorter than the schedule interval |
 | `ping_url` | No       | —       | [Healthchecks.io](https://healthchecks.io)-compatible ping URL (see below) |
+| `replicas` | No       | `once`  | For a Compose service with several replicas: run on one replica (`once`) or on each (`all`); see [Replicated services](#replicated-services) |
 
 ### Spreading start times (jitter)
 
@@ -216,6 +219,33 @@ This job starts at a random time between :00 and :05 every hour. A new delay is 
 - **Next run:** `next_run` in the API and `cronado_job_next_run_timestamp_seconds` show the scheduled time without the delay. The actual start can be up to the jitter later.
 - **Stops and restarts:** if cronado shuts down or the container stops during the wait, the run is dropped and not executed.
 - **Timeout and pings:** the timeout starts when the command starts, not when the delay starts. Healthchecks pings are sent when the command starts, so allow for the jitter in the check's grace time.
+
+### Replicated services
+
+When a Compose service runs several replicas, for example with `docker compose up --scale web=3` or `deploy.replicas: 3`, every replica carries the same labels. By default, cronado runs each job of such a service only once per run, on one replica:
+
+- **Which replica:** the one with the lowest Compose container number (`app-web-1` before `app-web-2`). Containers started with `docker compose run` only run the job if no regular replica of the service is running.
+- **Takeover:** if that replica stops, the next one runs the job from the next scheduled run on. No run is repeated or made up.
+- **Standby replicas:** the jobs of the other replicas stay registered and are shown with `"standby": true` in the API, `STANDBY` in `cronado cron-job list` and `cronado_job_standby 1`. They have no `next_run`. [Run now](#run-pause-and-resume-jobs) works on any replica.
+- **Per replica:** set `replicas=all` for jobs that must run in every replica, for example clearing a local cache:
+
+```yaml
+services:
+  web:
+    image: my-app
+    deploy:
+      replicas: 3
+    labels:
+      cronado.cleanup.enabled: "true"
+      cronado.cleanup.schedule: "0 3 * * *"
+      cronado.cleanup.cmd: "php bin/console app:cleanup"       # once, on web-1
+      cronado.cache.enabled: "true"
+      cronado.cache.schedule: "*/15 * * * *"
+      cronado.cache.cmd: "php bin/console cache:pool:prune"
+      cronado.cache.replicas: "all"                             # on every replica
+```
+
+Replicas are matched by the Compose project, service and job name. Containers not created by Docker Compose are never treated as replicas. Cronado only sees the containers on its own Docker host, so replicas on other hosts each run the job.
 
 ### Checking labels before deployment
 
@@ -239,7 +269,7 @@ Example output:
 ```
 app
   ✓ cleanup: @daily (enabled)
-  ! cronado.cleanup.timout: unknown property "timout", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url (label ignored)
+  ! cronado.cleanup.timout: unknown property "timout", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas (label ignored)
   ✗ report: invalid cron schedule "0 25 * * *": end of range (25) above maximum (23): 25
 db (container my-db)
   ✓ backup: 0 2 * * * (enabled)
@@ -384,7 +414,7 @@ Response:
 ]
 ```
 
-Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label.
+Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label. `replicas` is `once` or `all`, and `standby` is `true` when another replica of the Compose service runs the job (see [Replicated services](#replicated-services)).
 
 `id` identifies the job in the [run, pause and resume](#run-pause-and-resume-jobs) endpoints. `status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
 
@@ -442,7 +472,7 @@ Response:
     "container_name": "my-app",
     "job": "cleanup",
     "label": "cronado.cleanup.timout",
-    "message": "unknown property \"timout\", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url",
+    "message": "unknown property \"timout\", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas",
     "job_rejected": false
   }
 ]
@@ -492,6 +522,7 @@ Prometheus metrics are available at `/metrics`:
 | `cronado_job_next_run_timestamp_seconds`     | Gauge | Unix time of the next scheduled run (same labels)     |
 | `cronado_job_running`                        | Gauge | `1` while the job runs, `0` otherwise (same labels)   |
 | `cronado_job_paused`                         | Gauge | `1` while the job is paused, `0` otherwise (same labels) |
+| `cronado_job_standby`                        | Gauge | `1` while another replica of the Compose service runs the job, `0` otherwise (same labels); see [Replicated services](#replicated-services) |
 | `cronado_label_issues`                       | Gauge | Number of label problems of a running container (labels: `container_id`, `container_name`, `job_name`, `kind` = `rejected_job` or `ignored_label`); see [List Label Problems](#list-label-problems) |
 
 Alert when a job has not succeeded for a day:

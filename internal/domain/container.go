@@ -3,6 +3,8 @@ package domain
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 )
 
@@ -114,4 +116,51 @@ func (c *Container) GetLabelsWithPrefix(prefix string) map[string]string {
 		}
 	}
 	return result
+}
+
+// Labels Docker Compose sets on the containers it creates
+const (
+	composeProjectLabel = "com.docker.compose.project"
+	composeServiceLabel = "com.docker.compose.service"
+	composeNumberLabel  = "com.docker.compose.container-number"
+	composeOneoffLabel  = "com.docker.compose.oneoff"
+)
+
+// ComposeService returns the Compose project and service the container
+// belongs to, or ok=false if it was not created by Docker Compose.
+func (c *Container) ComposeService() (project, service string, ok bool) {
+	project, hasProject := c.GetLabel(composeProjectLabel)
+	service, hasService := c.GetLabel(composeServiceLabel)
+	if !hasProject || !hasService || service == "" {
+		return "", "", false
+	}
+	return project, service, true
+}
+
+// replicaRank orders the replicas of a Compose service: regular replicas by
+// container number before one-off containers ("docker compose run"), with
+// the container ID as a tie-breaker. The lowest rank runs the shared jobs.
+func (c *Container) replicaRank() (oneoff bool, number int, id string) {
+	value, _ := c.GetLabel(composeOneoffLabel)
+	oneoff = strings.EqualFold(value, "true")
+	number = math.MaxInt
+	if value, ok := c.GetLabel(composeNumberLabel); ok {
+		if n, err := strconv.Atoi(value); err == nil {
+			number = n
+		}
+	}
+	return oneoff, number, c.ID
+}
+
+// ranksBefore reports whether c comes before other in replicaRank order.
+func (c *Container) ranksBefore(other *Container) bool {
+	oneoff, number, id := c.replicaRank()
+	otherOneoff, otherNumber, otherID := other.replicaRank()
+	if oneoff != otherOneoff {
+		return !oneoff
+	}
+	if number != otherNumber {
+		return number < otherNumber
+	}
+	return id < otherID
 }
