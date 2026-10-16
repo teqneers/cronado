@@ -161,6 +161,11 @@ func (m *CronJobManager) executeJob(container *Container, job *CronJob) {
 		m.mu.Unlock()
 		return
 	}
+	if m.isStandby(currentJob) {
+		slog.Debug("Skipping cron job, another replica of the Compose service runs it", "job_id", job.ID, "container", container.DisplayName(), "cron_job", job.Name)
+		m.mu.Unlock()
+		return
+	}
 	if !currentJob.IsIdle() {
 		slog.Warn("Skipping cron job execution - already running", "job_id", job.ID, "status", currentJob.Status)
 		m.mu.Unlock()
@@ -412,13 +417,39 @@ func (m *CronJobManager) GetAllTyped() []CronJob {
 	result := make([]CronJob, 0, len(m.jobs))
 	for _, job := range m.jobs {
 		jobCopy := *job
-		// A paused job has no next run, even though the scheduler keeps it.
-		if next, ok := nextRuns[job.SchedulerId]; ok && !job.Paused {
+		jobCopy.Standby = m.isStandby(job)
+		// A paused or standby job has no next run, even though the scheduler
+		// keeps it.
+		if next, ok := nextRuns[job.SchedulerId]; ok && !job.Paused && !jobCopy.Standby {
 			jobCopy.NextRun = &next
 		}
 		result = append(result, jobCopy)
 	}
 	return result
+}
+
+// isStandby reports whether the scheduled runs of job are left to another
+// replica of the same Compose service: with replicas=once, only the job of
+// the lowest-numbered replica runs, and the next one takes over when that
+// container stops. The caller must hold m.mu.
+func (m *CronJobManager) isStandby(job *CronJob) bool {
+	if job.Replicas == ReplicasAll || job.Container == nil {
+		return false
+	}
+	project, service, ok := job.Container.ComposeService()
+	if !ok {
+		return false
+	}
+	for _, other := range m.jobs {
+		if other == job || other.Name != job.Name || other.Replicas == ReplicasAll || other.Container == nil {
+			continue
+		}
+		otherProject, otherService, ok := other.Container.ComposeService()
+		if ok && otherProject == project && otherService == service && other.Container.ranksBefore(job.Container) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsRegistered checks if a cron job is already registered by job ID

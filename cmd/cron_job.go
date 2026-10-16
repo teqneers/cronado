@@ -47,6 +47,9 @@ var cronJobListCmd = &cobra.Command{
 				if job.CronJob.Paused {
 					paused = " | PAUSED"
 				}
+				if job.CronJob.Standby {
+					paused += " | STANDBY"
+				}
 				fmt.Printf("- Container: %s | ID: %s | Schedule: %s | Cmd: %s%s\n",
 					containerDisplay,
 					job.CronJob.ID,
