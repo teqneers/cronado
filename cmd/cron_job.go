@@ -50,6 +50,9 @@ var cronJobListCmd = &cobra.Command{
 				if job.CronJob.Standby {
 					paused += " | STANDBY"
 				}
+				if job.CronJob.Source == domain.SourceConfig {
+					paused += " | from config file"
+				}
 				fmt.Printf("- Container: %s | ID: %s | Schedule: %s | Cmd: %s%s\n",
 					containerDisplay,
 					job.CronJob.ID,
@@ -110,7 +113,11 @@ func callAPI(method, path string, v any) error {
 // formatLabelIssue describes a label problem in one line.
 func formatLabelIssue(issue domain.ContainerLabelIssue) string {
 	if issue.JobRejected {
-		return fmt.Sprintf("job %s rejected: %s", issue.Job, issue.Message)
+		source := ""
+		if issue.Source == domain.SourceConfig {
+			source = " (config file)"
+		}
+		return fmt.Sprintf("job %s rejected: %s%s", issue.Job, issue.Message, source)
 	}
 	return fmt.Sprintf("label %s ignored: %s", issue.Label, issue.Message)
 }

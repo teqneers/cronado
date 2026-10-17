@@ -22,6 +22,8 @@ type LabelIssue struct {
 	// JobRejected is true if the job is not scheduled because of this issue.
 	// Otherwise the label is ignored and the job may still run.
 	JobRejected bool
+	// Source is SourceConfig for jobs from the config file, empty for labels.
+	Source string
 }
 
 // ParseJobLabels parses the cron job labels of container. It returns every

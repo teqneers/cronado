@@ -13,6 +13,8 @@ type ContainerLabelIssue struct {
 	// JobRejected is true if the job is not scheduled because of this issue.
 	// Otherwise only the label is ignored.
 	JobRejected bool `json:"job_rejected"`
+	// Source is "config" for jobs from the config file, omitted for labels.
+	Source string `json:"source,omitempty"`
 }
 
 // SetLabelIssues replaces the label issues recorded for container. An empty
@@ -37,6 +39,7 @@ func (m *CronJobManager) SetLabelIssues(container *Container, issues []LabelIssu
 			Label:         issue.Label,
 			Message:       issue.Message,
 			JobRejected:   issue.JobRejected,
+			Source:        issue.Source,
 		})
 	}
 	m.labelIssues[container.ID] = result

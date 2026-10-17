@@ -51,3 +51,12 @@ notify:
 metrics:
   enabled: true
   endpoint: "/metrics"
+# Cron jobs for containers whose labels you cannot change. Same properties
+# as the labels; enabled defaults to true. Read at startup only.
+#jobs:
+#  - name: backup
+#    container: postgres
+#    schedule: "0 2 * * *"
+#    cmd: pg_dump -U postgres mydb > /backups/daily.sql
+#    user: postgres
+#    timeout: 10m

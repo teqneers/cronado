@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 	"github.com/teqneers/cronado/internal/compose"
+	"github.com/teqneers/cronado/internal/config"
 	cronadoCtx "github.com/teqneers/cronado/internal/context"
 	"github.com/teqneers/cronado/internal/domain"
 )
@@ -32,7 +33,8 @@ mistakes are found before deployment. No Docker access is needed. Several -f
 flags are merged like "docker compose -f a.yml -f b.yml".
 
 Without -f, the labels of all running containers are checked via the Docker
-socket.
+socket, together with the jobs in the config file. Config jobs whose
+container is not running are checked on their own.
 
 Exits with 1 if any problem was found, 0 otherwise.`,
 	Example: `  cronado validate -f docker-compose.yml
@@ -40,22 +42,25 @@ Exits with 1 if any problem was found, 0 otherwise.`,
   cronado validate`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		cfg := cronadoCtx.AppCtx.Config
 		var (
-			targets []validateTarget
-			err     error
+			targets    []validateTarget
+			configJobs []config.JobConfig
+			err        error
 		)
 		if len(validateFiles) > 0 {
 			targets, err = composeTargets(validateFiles)
 		} else {
+			configJobs = cfg.Jobs
 			targets, err = runningContainerTargets()
+			targets = addConfigJobTargets(targets, configJobs)
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(2)
 		}
 
-		cfg := cronadoCtx.AppCtx.Config
-		if !validateTargets(os.Stdout, targets, cfg.CronLabelPrefix, cfg.MinScheduleInterval, cfg.MaxTimeout) {
+		if !validateTargets(os.Stdout, targets, configJobs, cfg.CronLabelPrefix, cfg.MinScheduleInterval, cfg.MaxTimeout) {
 			os.Exit(1)
 		}
 	},
@@ -115,17 +120,49 @@ func runningContainerTargets() ([]validateTarget, error) {
 	return targets, nil
 }
 
-// validateTargets writes a report for every target with cron job labels and
-// returns true if no problems were found.
-func validateTargets(w io.Writer, targets []validateTarget, prefix string, minScheduleInterval, maxTimeout time.Duration) bool {
+// addConfigJobTargets adds a target for every container that config jobs
+// refer to but that is not running, so that those jobs are checked too.
+func addConfigJobTargets(targets []validateTarget, configJobs []config.JobConfig) []validateTarget {
+	running := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		running[t.container.Name] = true
+	}
+	var missing []string
+	for name := range domain.ConfigJobContainers(configJobs) {
+		if !running[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	for _, name := range missing {
+		targets = append(targets, validateTarget{
+			name:      name + " (not running)",
+			container: &domain.Container{Name: name},
+		})
+	}
+	return targets
+}
+
+// validateTargets writes a report for every target with cron job labels or
+// config jobs and returns true if no problems were found.
+func validateTargets(w io.Writer, targets []validateTarget, configJobs []config.JobConfig, prefix string, minScheduleInterval, maxTimeout time.Duration) bool {
 	var checked, jobsOK, jobsRejected, labelsIgnored int
 
+	configProblems := domain.CheckConfigJobs(configJobs)
+	if len(configProblems) > 0 {
+		_, _ = fmt.Fprintf(w, "config file\n")
+		for _, problem := range configProblems {
+			_, _ = fmt.Fprintf(w, "  ✗ %s\n", problem)
+		}
+	}
+	configContainers := domain.ConfigJobContainers(configJobs)
+
 	for _, t := range targets {
-		if !hasPrefixedLabel(t.container.Labels, prefix) {
+		if !hasPrefixedLabel(t.container.Labels, prefix) && len(configContainers[t.container.Name]) == 0 {
 			continue
 		}
 		checked++
-		jobs, issues := domain.ParseJobLabels(t.container, prefix, minScheduleInterval, maxTimeout)
+		jobs, issues := domain.ParseContainerJobs(t.container, prefix, configJobs, minScheduleInterval, maxTimeout)
 
 		_, _ = fmt.Fprintf(w, "%s\n", t.name)
 
@@ -140,6 +177,9 @@ func validateTargets(w io.Writer, targets []validateTarget, prefix string, minSc
 			if !job.Enabled {
 				state = "disabled"
 			}
+			if job.Source == domain.SourceConfig {
+				state += ", config file"
+			}
 			_, _ = fmt.Fprintf(w, "  ✓ %s: %s (%s)\n", name, job.Schedule, state)
 			jobsOK++
 		}
@@ -151,7 +191,11 @@ func validateTargets(w io.Writer, targets []validateTarget, prefix string, minSc
 					rejected[issue.Job] = true
 					jobsRejected++
 				}
-				_, _ = fmt.Fprintf(w, "  ✗ %s: %s\n", issue.Job, issue.Message)
+				source := ""
+				if issue.Source == domain.SourceConfig {
+					source = " (config file)"
+				}
+				_, _ = fmt.Fprintf(w, "  ✗ %s: %s%s\n", issue.Job, issue.Message, source)
 				continue
 			}
 			labelsIgnored++
@@ -161,7 +205,7 @@ func validateTargets(w io.Writer, targets []validateTarget, prefix string, minSc
 
 	if checked == 0 {
 		_, _ = fmt.Fprintf(w, "No containers with %s.* labels found.\n", prefix)
-		return true
+		return len(configProblems) == 0
 	}
 
 	_, _ = fmt.Fprintf(w, "\nChecked %d %s: %d %s OK, %d %s rejected, %d %s ignored.\n",
@@ -170,7 +214,7 @@ func validateTargets(w io.Writer, targets []validateTarget, prefix string, minSc
 		jobsRejected, plural(jobsRejected, "job", "jobs"),
 		labelsIgnored, plural(labelsIgnored, "label", "labels"))
 
-	return jobsRejected == 0 && labelsIgnored == 0
+	return jobsRejected == 0 && labelsIgnored == 0 && len(configProblems) == 0
 }
 
 func hasPrefixedLabel(labels map[string]string, prefix string) bool {

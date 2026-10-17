@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/teqneers/cronado/internal/config"
 	cronadoCtx "github.com/teqneers/cronado/internal/context"
 	"github.com/teqneers/cronado/internal/util"
 
@@ -231,22 +232,26 @@ func parseCronsFromContainer(container *Container, cronLabelPrefix string) map[s
 	return jobs
 }
 
-// parseAndLogLabels parses the cron job labels of container, logs every
-// problem found and returns the jobs and the problems.
+// parseAndLogLabels parses the cron job labels of container and the config
+// file jobs for it, logs every problem found and returns the jobs and the
+// problems.
 func parseAndLogLabels(container *Container, cronLabelPrefix string) (map[string]CronJob, []LabelIssue) {
 	var minScheduleInterval, maxTimeout time.Duration
+	var configJobs []config.JobConfig
 	if cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil {
 		minScheduleInterval = cronadoCtx.AppCtx.Config.MinScheduleInterval
 		maxTimeout = cronadoCtx.AppCtx.Config.MaxTimeout
+		configJobs = cronadoCtx.AppCtx.Config.Jobs
 	}
 
-	jobs, issues := ParseJobLabels(container, cronLabelPrefix, minScheduleInterval, maxTimeout)
+	jobs, issues := ParseContainerJobs(container, cronLabelPrefix, configJobs, minScheduleInterval, maxTimeout)
 
 	for _, issue := range issues {
 		if issue.JobRejected {
 			slog.Error("Failed to build cron job",
 				"job", issue.Job,
 				"container", container.DisplayName(),
+				"source", sourceName(issue.Source),
 				"error", issue.Message)
 			continue
 		}
@@ -263,10 +268,19 @@ func parseAndLogLabels(container *Container, cronLabelPrefix string) (map[string
 			"enabled", cronJob.Enabled,
 			"schedule", cronJob.SchedulerSpec(),
 			"command", cronJob.Command,
-			"user", cronJob.User)
+			"user", cronJob.User,
+			"source", cronJob.Source)
 	}
 
 	return jobs, issues
+}
+
+// sourceName names the source of a label issue for log output.
+func sourceName(source string) string {
+	if source == "" {
+		return SourceLabel
+	}
+	return source
 }
 
 // registerCronJob validates and registers a cron job using the context manager
