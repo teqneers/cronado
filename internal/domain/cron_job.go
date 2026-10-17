@@ -36,7 +36,9 @@ type CronJob struct {
 	Jitter    time.Duration `json:"jitter,omitempty"`
 	PingURL   string        `json:"ping_url,omitempty"`
 	Replicas  string        `json:"replicas,omitempty"`
-	Status    string        `json:"status"`
+	// Source is where the job is defined: SourceLabel or SourceConfig
+	Source string `json:"source,omitempty"`
+	Status string `json:"status"`
 	// Paused jobs skip their scheduled runs until resumed. Not persisted:
 	// a restart of the container or of cronado resumes the job.
 	Paused bool `json:"paused"`

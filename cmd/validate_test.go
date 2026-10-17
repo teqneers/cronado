@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/teqneers/cronado/internal/config"
 	"github.com/teqneers/cronado/internal/domain"
 )
 
@@ -29,7 +30,7 @@ func TestValidateTargets_ReportsProblems(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if validateTargets(&out, targets, "cronado", 0, 0) {
+	if validateTargets(&out, targets, nil, "cronado", 0, 0) {
 		t.Error("expected failure")
 	}
 
@@ -58,7 +59,7 @@ func TestValidateTargets_AllValid(t *testing.T) {
 	})}
 
 	var out bytes.Buffer
-	if !validateTargets(&out, targets, "cronado", 0, 0) {
+	if !validateTargets(&out, targets, nil, "cronado", 0, 0) {
 		t.Errorf("expected success:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "✓ backup: @daily (disabled)") {
@@ -68,7 +69,7 @@ func TestValidateTargets_AllValid(t *testing.T) {
 
 func TestValidateTargets_NothingFound(t *testing.T) {
 	var out bytes.Buffer
-	if !validateTargets(&out, []validateTarget{target("web", nil)}, "cronado", 0, 0) {
+	if !validateTargets(&out, []validateTarget{target("web", nil)}, nil, "cronado", 0, 0) {
 		t.Error("expected success when no labels found")
 	}
 	if !strings.Contains(out.String(), "No containers with cronado.* labels found.") {
@@ -86,7 +87,40 @@ func TestValidateTargets_AcceptsTimezoneAndJitter(t *testing.T) {
 	})}
 
 	var out bytes.Buffer
-	if !validateTargets(&out, targets, "cronado", 0, 0) {
+	if !validateTargets(&out, targets, nil, "cronado", 0, 0) {
 		t.Errorf("expected success:\n%s", out.String())
+	}
+}
+
+func TestValidateTargets_ConfigJobs(t *testing.T) {
+	configJobs := []config.JobConfig{
+		{Name: "backup", Container: "db", Schedule: "0 2 * * *", Cmd: "pg_dump"},
+		{Name: "report", Container: "worker", Schedule: "0 25 * * *", Cmd: "php report.php"},
+		{Name: "orphan"},
+	}
+	targets := addConfigJobTargets([]validateTarget{target("db", nil)}, configJobs)
+
+	var out bytes.Buffer
+	if validateTargets(&out, targets, configJobs, "cronado", 0, 0) {
+		t.Error("validateTargets = true, want false")
+	}
+	got := out.String()
+	for _, want := range []string{
+		"config file\n  ✗ jobs[2] orphan: container is required\n",
+		"db\n  ✓ backup: 0 2 * * * (enabled, config file)\n",
+		"worker (not running)\n  ✗ report: invalid cron schedule",
+		"(config file)\n",
+		"Checked 2 containers: 1 job OK, 1 job rejected, 0 labels ignored.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatLabelIssue_ConfigSource(t *testing.T) {
+	got := formatLabelIssue(domain.ContainerLabelIssue{Job: "backup", Message: "command not set", JobRejected: true, Source: domain.SourceConfig})
+	if want := "job backup rejected: command not set (config file)"; got != want {
+		t.Errorf("formatLabelIssue = %q, want %q", got, want)
 	}
 }

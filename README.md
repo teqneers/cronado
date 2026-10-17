@@ -41,6 +41,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - HTTP API to list active cron jobs with last result and next run, and the label problems of running containers
 - Run a job on demand, or pause and resume it, via API and CLI
 - Jobs of a Compose service with several replicas run on one replica only, with automatic takeover
+- Jobs can also be defined in the config file, for containers whose labels you cannot change
 - CLI for management (`cron` to start, `cron-job list` to inspect, `validate` to check labels, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
 - Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
@@ -281,6 +282,7 @@ Checked 2 containers: 3 jobs OK, 1 job rejected, 1 label ignored.
 - **✓** the job is valid. Disabled jobs are listed too.
 - **✗** the job is rejected and will not run. All reasons are listed, e.g. an invalid value and a missing `schedule`.
 - **!** a single label is ignored, e.g. an unknown property or an invalid job name. The job itself may still run, but probably not as intended.
+- **Config file jobs:** without `-f`, the [jobs in the config file](#jobs-in-the-config-file) are checked too and marked `config file`. With `-f`, only the Compose labels are checked.
 - **Exit code:** `0` if nothing was found, `1` if any job was rejected or label ignored, `2` if the Compose file or Docker could not be read. Use it in CI to fail a deployment.
 - **Settings:** the label prefix, `CRONADO_MIN_SCHEDULE_INTERVAL` and `CRONADO_MAX_TIMEOUT` are read from the same config and environment as `cronado cron`. Run `validate` with the same settings as your scheduler, or limits like the minimum interval are not checked the same way. `docker exec cronado ./cronado validate` always uses the scheduler's own settings.
 - **Compose limits:** only `labels` and `container_name` are read. Variables like `${VAR}` are not substituted; `$$` is read as `$`. Run `docker compose config > resolved.yml` first if your labels use variables.
@@ -296,6 +298,34 @@ cronado.backup.ping_url=https://hc-ping.com/5f2c1a3e-...
 Cronado sends `POST <ping_url>/start` before each run, `POST <ping_url>` on success and `POST <ping_url>/fail` with the end of the output on failure. Healthchecks then alerts you when a ping is late or a run fails. Redirects are not followed, and the URL is redacted in the API unless an API token is set.
 
 Ping URLs come from container labels, so by default they may only point to public addresses. For a self-hosted Healthchecks instance on a private network, set `CRONADO_PING_ALLOW_PRIVATE_NETWORKS=true`. Pings do not use `HTTP_PROXY`.
+
+### Jobs in the config file
+
+Labels need the container to be recreated, and some containers are not yours to change, for example ones started by another tool. For those, define the jobs in cronado's `config.yaml` instead:
+
+```yaml
+jobs:
+  - name: backup
+    container: postgres           # container name, as in "docker ps"
+    schedule: "0 2 * * *"
+    cmd: pg_dump -U postgres mydb > /backups/daily.sql
+    user: postgres
+    timeout: 10m
+  - name: cleanup
+    container: shop-web-1
+    schedule: "@hourly"
+    cmd: php bin/console app:cleanup
+    jitter: 5m
+```
+
+- **Properties:** `name`, `container` and the [label properties](#label-reference) `enabled`, `schedule`, `cmd`, `user`, `timezone`, `timeout`, `jitter`, `ping_url` and `replicas`, with the same values and checks. `enabled` defaults to `true`.
+- **Target:** the job runs in the container with exactly this name, whenever it is running, and is removed when it stops, like a label job. For a Compose service, use the container name, e.g. `shop-web-1`.
+- **Same name as a label job:** if the container's labels define a job with the same name, the labels are used and the config job is reported as a [label problem](#list-label-problems) with `"source": "config"`.
+- **Changes:** the config file is read at startup. Restart cronado after editing it.
+- **In the API:** config jobs have `"source": "config"`, label jobs `"source": "label"`. `cronado cron-job list` marks them `from config file`.
+- **In Docker:** mount the file at `/opt/config.yaml`, e.g. `-v ./cronado.yaml:/opt/config.yaml:ro`. Environment variables still override the other settings.
+
+`cronado validate` (without `-f`) also checks the config jobs, including those whose container is not running.
 
 ## Configuration
 
@@ -414,7 +444,7 @@ Response:
 ]
 ```
 
-Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label. `replicas` is `once` or `all`, and `standby` is `true` when another replica of the Compose service runs the job (see [Replicated services](#replicated-services)).
+Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label. `source` is `label` or `config` (see [Jobs in the config file](#jobs-in-the-config-file)). `replicas` is `once` or `all`, and `standby` is `true` when another replica of the Compose service runs the job (see [Replicated services](#replicated-services)).
 
 `id` identifies the job in the [run, pause and resume](#run-pause-and-resume-jobs) endpoints. `status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
 
@@ -481,6 +511,7 @@ Response:
 - **`job_rejected: true`:** the job is not scheduled. A job can have several entries, one per problem.
 - **`job_rejected: false`:** only the named `label` is ignored. The job itself may still run, but probably not as intended.
 - **Lifetime:** problems are recorded when a container starts and removed when it stops. Fixing the labels means recreating the container, which also clears its entries.
+- **`source: config`:** the problem is in a job from the [config file](#jobs-in-the-config-file). Omitted for labels.
 - The list is `[]` when there are no problems. Like `/api/cron-job`, it needs the API token if one is set.
 
 `cronado validate` reports the same problems before deployment; see [Checking labels before deployment](#checking-labels-before-deployment).

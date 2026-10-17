@@ -65,6 +65,22 @@ type Metrics struct {
 	Endpoint string // metrics endpoint URL
 }
 
+// JobConfig is a cron job defined in the config file instead of container
+// labels. The properties have the same meaning and format as the labels.
+type JobConfig struct {
+	Name      string `mapstructure:"name"`
+	Container string `mapstructure:"container"` // name of the container to run in
+	Enabled   *bool  `mapstructure:"enabled"`   // default true
+	Schedule  string `mapstructure:"schedule"`
+	Cmd       string `mapstructure:"cmd"`
+	User      string `mapstructure:"user"`
+	Timezone  string `mapstructure:"timezone"`
+	Timeout   string `mapstructure:"timeout"`
+	Jitter    string `mapstructure:"jitter"`
+	PingURL   string `mapstructure:"ping_url"`
+	Replicas  string `mapstructure:"replicas"`
+}
+
 // Config holds application settings
 type Config struct {
 	AppName             string
@@ -80,6 +96,8 @@ type Config struct {
 	Log                      LogConfig
 	Notify                   Notify
 	Metrics                  Metrics
+	// Jobs are the cron jobs defined in the config file
+	Jobs []JobConfig
 }
 
 // LoadConfig reads configurations using Viper
@@ -173,7 +191,13 @@ func LoadConfig() *Config {
 		shutdownTimeout = 8 * time.Second
 	}
 
+	var jobs []JobConfig
+	if err := viper.UnmarshalKey("jobs", &jobs); err != nil {
+		log.Fatalf("Invalid jobs in config: %v", err)
+	}
+
 	return &Config{
+		Jobs:                     jobs,
 		AppName:                  viper.GetString("app_name"),
 		CronLabelPrefix:          viper.GetString("cron_label_prefix"),
 		MinScheduleInterval:      minScheduleInterval,
