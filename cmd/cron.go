@@ -62,6 +62,8 @@ var cronCmd = &cobra.Command{
 		prometheus.MustRegister(domain.NewJobStateCollector(cronJobManager))
 
 		domain.LogConfigJobs(config.Jobs)
+		domain.RemoveLeftoverRunContainers(domain.GetDockerClient())
+		domain.RegisterConfigRunJobs()
 		domain.InitializeAlreadyRunningContainers()
 		domain.StartEventListener(stop)
 

@@ -42,6 +42,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 - Run a job on demand, or pause and resume it, via API and CLI
 - Jobs of a Compose service with several replicas run on one replica only, with automatic takeover
 - Jobs can also be defined in the config file, for containers whose labels you cannot change
+- Jobs can run in a new container from any image, e.g. for backups, instead of inside a running container
 - CLI for management (`cron` to start, `cron-job list` to inspect, `validate` to check labels, `healthcheck`)
 - Prometheus metrics (`/metrics`), including last success and next run per job
 - Failure notifications via email (SMTP), [ntfy.sh](https://ntfy.sh) and webhooks (Slack, Discord, Gotify, generic JSON), including the end of the command output
@@ -195,13 +196,17 @@ This job runs at 2:00 AM Berlin time all year: 00:00 UTC in summer and 01:00 UTC
 |------------|----------|---------|----------------------------------------------|
 | `enabled`  | Yes      | —       | Enable/disable the job (`true`/`false`)      |
 | `schedule` | Yes      | —       | Cron expression or `@every` interval         |
-| `cmd`      | Yes      | —       | Command to execute inside the container      |
+| `cmd`      | Yes, unless `image` is set | — | Command to execute inside the container      |
 | `user`     | No       | container's `USER` | User to run the command as        |
 | `timezone` | No       | Cronado's time zone (`TZ`, UTC in the image) | IANA time zone the schedule runs in (e.g., `Europe/Berlin`) |
 | `timeout`  | No       | `30s`   | Max execution time (e.g., `30s`, `5m`, `1h`) |
 | `jitter`   | No       | —       | Random delay of up to this duration before each run (e.g., `2m`); must be shorter than the schedule interval |
 | `ping_url` | No       | —       | [Healthchecks.io](https://healthchecks.io)-compatible ping URL (see below) |
 | `replicas` | No       | `once`  | For a Compose service with several replicas: run on one replica (`once`) or on each (`all`); see [Replicated services](#replicated-services) |
+| `image`    | No       | —       | Run the job in a new container from this image instead; see [Jobs in their own container](#jobs-in-their-own-container) |
+| `network`  | No       | Docker's default bridge | Network of the job's own container (needs `image`) |
+| `volumes`  | No       | —       | Comma-separated volumes of the job's own container, like `docker run -v` (needs `image`) |
+| `env.<NAME>` | No     | —       | Environment variable `<NAME>` of the job's own container (needs `image`) |
 
 ### Spreading start times (jitter)
 
@@ -318,7 +323,7 @@ jobs:
     jitter: 5m
 ```
 
-- **Properties:** `name`, `container` and the [label properties](#label-reference) `enabled`, `schedule`, `cmd`, `user`, `timezone`, `timeout`, `jitter`, `ping_url` and `replicas`, with the same values and checks. `enabled` defaults to `true`.
+- **Properties:** `name`, `container` and the [label properties](#label-reference) `enabled`, `schedule`, `cmd`, `user`, `timezone`, `timeout`, `jitter`, `ping_url` and `replicas`, with the same values and checks. `enabled` defaults to `true`. For [jobs in their own container](#jobs-in-their-own-container), `image`, `network`, `volumes` and `environment` instead of `container`.
 - **Target:** the job runs in the container with exactly this name, whenever it is running, and is removed when it stops, like a label job. For a Compose service, use the container name, e.g. `shop-web-1`.
 - **Same name as a label job:** if the container's labels define a job with the same name, the labels are used and the config job is reported as a [label problem](#list-label-problems) with `"source": "config"`.
 - **Changes:** the config file is read at startup. Restart cronado after editing it.
@@ -326,6 +331,54 @@ jobs:
 - **In Docker:** mount the file at `/opt/config.yaml`, e.g. `-v ./cronado.yaml:/opt/config.yaml:ro`. Environment variables still override the other settings.
 
 `cronado validate` (without `-f`) also checks the config jobs, including those whose container is not running.
+
+### Jobs in their own container
+
+Some jobs need tools that the application container does not have, for example a backup with [restic](https://restic.net). Set `image` and cronado runs the job in a new container from that image, like `docker run --rm`:
+
+```yaml
+services:
+  cronado:
+    image: ghcr.io/teqneers/cronado:v1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      cronado.backup.enabled: "true"
+      cronado.backup.schedule: "0 3 * * *"
+      cronado.backup.image: "restic/restic:0.17.3"
+      cronado.backup.cmd: "backup /data"
+      cronado.backup.volumes: "/srv/app/data:/data:ro,restic-cache:/root/.cache/restic"
+      cronado.backup.network: "backend"
+      cronado.backup.env.RESTIC_REPOSITORY: "s3:s3.example.com/backups"
+      cronado.backup.env.RESTIC_PASSWORD_FILE: "/data/.restic-password"
+      cronado.backup.timeout: "2h"
+```
+
+Or in the config file, with `image` instead of `container`. `volumes` and `environment` are lists there:
+
+```yaml
+jobs:
+  - name: backup
+    image: restic/restic:0.17.3
+    schedule: "0 3 * * *"
+    cmd: backup /data
+    volumes:
+      - /srv/app/data:/data:ro
+      - restic-cache:/root/.cache/restic
+    network: backend
+    environment:
+      - RESTIC_REPOSITORY=s3:s3.example.com/backups
+      - RESTIC_PASSWORD_FILE=/data/.restic-password
+    timeout: 2h
+```
+
+- **Which container:** the labels can be on any container, e.g. on cronado itself or on the application the job belongs to. The job exists while that container runs; it only defines the job. Config file jobs with `image` exist for as long as cronado runs and have the ID `cronado-<name>`.
+- **Command:** `cmd` is passed to the image's entrypoint as arguments, like `docker run <image> <cmd>`, with shell-style quoting but without a shell. Use `sh -c "..."` for pipes, redirects or variables. Without `cmd`, the image's default command runs.
+- **Image pull:** the image is pulled if it is not present, like `docker run`. A new version of a tag is not pulled automatically; use a fixed tag and update it. Private registries are not supported yet: pull such images on the host beforehand. The pull does not count towards the job `timeout`.
+- **Run:** the container runs as the image's `USER`, or as `user` if set. On timeout it is killed. It is removed after every run, also on failure. Output and exit code are handled like for other jobs.
+- **Secrets:** `env.*` values are not shown in the API or the logs. Labels are visible to anyone who can run `docker inspect`, so prefer files mounted via `volumes` for passwords.
+- **Leftovers:** job containers carry the label `io.github.teqneers.cronado.job=<job-id>`. If cronado stops during a run, it removes the stopped container at its next start.
+- **Socket proxy:** these jobs need more of the Docker API, see [Docker Socket Proxy](#docker-socket-proxy).
 
 ## Configuration
 
@@ -670,6 +723,14 @@ services:
 networks:
   cronado:
   docker-proxy:
+```
+
+For [jobs in their own container](#jobs-in-their-own-container), cronado also inspects and pulls images and creates, starts, kills and removes containers. Replace the `-allowGET` and `-allowPOST` lines and add `-allowDELETE`:
+
+```yaml
+      - '-allowGET=/(v[.0-9]*/)?(containers/.*|exec/.*|images/.*|info|events)'
+      - '-allowPOST=/(v[.0-9]*/)?(containers|exec|images)/.*'
+      - '-allowDELETE=/(v[.0-9]*/)?containers/[a-zA-Z0-9_.-]+'
 ```
 
 > **Note:** The `-allowfrom` flag restricts which containers may connect to the proxy. Set it to the cronado

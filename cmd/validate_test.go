@@ -97,6 +97,7 @@ func TestValidateTargets_ConfigJobs(t *testing.T) {
 		{Name: "backup", Container: "db", Schedule: "0 2 * * *", Cmd: "pg_dump"},
 		{Name: "report", Container: "worker", Schedule: "0 25 * * *", Cmd: "php report.php"},
 		{Name: "orphan"},
+		{Name: "offsite", Image: "restic/restic:0.17.3", Schedule: "0 3 * * *", Cmd: "backup /data"},
 	}
 	targets := addConfigJobTargets([]validateTarget{target("db", nil)}, configJobs)
 
@@ -106,11 +107,12 @@ func TestValidateTargets_ConfigJobs(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"config file\n  ✗ jobs[2] orphan: container is required\n",
+		"config file\n  ✗ jobs[2] orphan: container or image is required\n",
+		"own containers (image)\n  ✓ offsite: 0 3 * * * (enabled, config file)\n",
 		"db\n  ✓ backup: 0 2 * * * (enabled, config file)\n",
 		"worker (not running)\n  ✗ report: invalid cron schedule",
 		"(config file)\n",
-		"Checked 2 containers: 1 job OK, 1 job rejected, 0 labels ignored.",
+		"Checked 3 containers: 2 jobs OK, 1 job rejected, 0 labels ignored.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)

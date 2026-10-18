@@ -12,7 +12,7 @@ import (
 var validJobName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 // validProperties lists the job properties that can be set via labels.
-const validProperties = "enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas"
+const validProperties = "enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas,image,network,volumes,env.<NAME>"
 
 // LabelIssue describes a problem found in a container's cron job labels.
 type LabelIssue struct {
@@ -92,7 +92,17 @@ func ParseJobLabels(container *Container, prefix string, minScheduleInterval, ma
 			builder.SetPingURL(labelValue)
 		case "replicas":
 			builder.SetReplicas(labelValue)
+		case "image":
+			builder.SetImage(labelValue)
+		case "network":
+			builder.SetNetwork(labelValue)
+		case "volumes":
+			builder.SetVolumes(labelValue)
 		default:
+			if name, ok := strings.CutPrefix(property, "env."); ok {
+				builder.SetEnv(name, labelValue)
+				continue
+			}
 			issues = append(issues, LabelIssue{
 				Job:     jobName,
 				Label:   label,

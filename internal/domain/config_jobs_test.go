@@ -112,7 +112,7 @@ func TestCheckConfigJobs(t *testing.T) {
 	want := []string{
 		"jobs[1]: name is required",
 		"jobs[2] bad name: invalid job name",
-		"jobs[3] nocontainer: container is required",
+		"jobs[3] nocontainer: container or image is required",
 		"jobs[4] ok: defined more than once for container db",
 	}
 	if len(problems) != len(want) {

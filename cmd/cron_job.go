@@ -50,6 +50,9 @@ var cronJobListCmd = &cobra.Command{
 				if job.CronJob.Standby {
 					paused += " | STANDBY"
 				}
+				if job.CronJob.Image != "" {
+					paused += " | Image: " + job.CronJob.Image
+				}
 				if job.CronJob.Source == domain.SourceConfig {
 					paused += " | from config file"
 				}

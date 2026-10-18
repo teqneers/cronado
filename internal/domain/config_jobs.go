@@ -19,44 +19,79 @@ const (
 // they are parsed with the same rules as labels.
 const configJobPrefix = "config"
 
+// configRunOwner owns the config file jobs that have an image instead of a
+// container. It is not a Docker container: its jobs are registered at
+// startup and stay for as long as cronado runs. Its empty name matches the
+// empty container of those jobs.
+var configRunOwner = &Container{ID: "cronado"}
+
+// ConfigRunOwner returns the owner of the config file jobs with an image.
+func ConfigRunOwner() *Container {
+	return configRunOwner
+}
+
 // CheckConfigJobs returns the problems of the config file jobs that do not
-// depend on a container: missing names or containers and duplicates.
+// depend on a container: missing names or targets and duplicates.
 func CheckConfigJobs(jobs []config.JobConfig) []string {
 	var problems []string
 	seen := make(map[string]bool)
 	for i, job := range jobs {
-		name := strings.TrimSpace(job.Name)
-		container := strings.TrimSpace(job.Container)
-		switch {
-		case name == "":
-			problems = append(problems, fmt.Sprintf("jobs[%d]: name is required", i))
-		case !validJobName.MatchString(name):
-			problems = append(problems, fmt.Sprintf("jobs[%d] %s: invalid job name, must match [a-zA-Z0-9][a-zA-Z0-9_-]*", i, name))
-		}
-		if container == "" {
-			problems = append(problems, fmt.Sprintf("jobs[%d] %s: container is required", i, name))
-		}
-		if name == "" || container == "" {
+		jobProblems := checkConfigJob(i, job)
+		problems = append(problems, jobProblems...)
+		if len(jobProblems) > 0 {
 			continue
 		}
-		key := container + "/" + name
+		name := strings.TrimSpace(job.Name)
+		key := strings.TrimSpace(job.Container) + "/" + name
 		if seen[key] {
-			problems = append(problems, fmt.Sprintf("jobs[%d] %s: defined more than once for container %s", i, name, container))
+			if job.Container == "" {
+				problems = append(problems, fmt.Sprintf("jobs[%d] %s: defined more than once", i, name))
+			} else {
+				problems = append(problems, fmt.Sprintf("jobs[%d] %s: defined more than once for container %s", i, name, strings.TrimSpace(job.Container)))
+			}
 		}
 		seen[key] = true
 	}
 	return problems
 }
 
+// checkConfigJob returns the problems of a single config job that keep it
+// from being parsed.
+func checkConfigJob(i int, job config.JobConfig) []string {
+	var problems []string
+	name := strings.TrimSpace(job.Name)
+	container := strings.TrimSpace(job.Container)
+	image := strings.TrimSpace(job.Image)
+	switch {
+	case name == "":
+		problems = append(problems, fmt.Sprintf("jobs[%d]: name is required", i))
+	case !validJobName.MatchString(name):
+		problems = append(problems, fmt.Sprintf("jobs[%d] %s: invalid job name, must match [a-zA-Z0-9][a-zA-Z0-9_-]*", i, name))
+	}
+	switch {
+	case container == "" && image == "":
+		problems = append(problems, fmt.Sprintf("jobs[%d] %s: container or image is required", i, name))
+	case container != "" && image != "":
+		problems = append(problems, fmt.Sprintf("jobs[%d] %s: set either container or image, not both", i, name))
+	}
+	for _, entry := range job.Environment {
+		if key, _, ok := strings.Cut(entry, "="); !ok || key == "" {
+			problems = append(problems, fmt.Sprintf("jobs[%d] %s: environment entry %q must be KEY=value", i, name, entry))
+		}
+	}
+	return problems
+}
+
 // ParseConfigJobs parses the config file jobs that target container, with
 // the same rules as labels. Jobs with problems found by CheckConfigJobs are
-// skipped.
+// skipped. The jobs with an image instead of a container are those of
+// ConfigRunOwner.
 func ParseConfigJobs(container *Container, jobs []config.JobConfig, minScheduleInterval, maxTimeout time.Duration) (map[string]CronJob, []LabelIssue) {
 	labels := make(map[string]string)
 	seen := make(map[string]bool)
-	for _, job := range jobs {
+	for i, job := range jobs {
 		name := strings.TrimSpace(job.Name)
-		if strings.TrimSpace(job.Container) != container.Name || !validJobName.MatchString(name) || seen[name] {
+		if strings.TrimSpace(job.Container) != container.Name || len(checkConfigJob(i, job)) > 0 || seen[name] {
 			continue
 		}
 		seen[name] = true
@@ -74,10 +109,17 @@ func ParseConfigJobs(container *Container, jobs []config.JobConfig, minScheduleI
 			"jitter":   job.Jitter,
 			"ping_url": job.PingURL,
 			"replicas": job.Replicas,
+			"image":    job.Image,
+			"network":  job.Network,
+			"volumes":  strings.Join(job.Volumes, ","),
 		} {
 			if value != "" {
 				labels[configJobPrefix+"."+name+"."+property] = value
 			}
+		}
+		for _, entry := range job.Environment {
+			key, value, _ := strings.Cut(entry, "=")
+			labels[configJobPrefix+"."+name+".env."+key] = value
 		}
 	}
 	if len(labels) == 0 {
@@ -186,4 +228,19 @@ func LogConfigJobs(jobs []config.JobConfig) {
 	for container, names := range ConfigJobContainers(jobs) {
 		slog.Info("Cron jobs from config file", "container", container, "jobs", strings.Join(names, ","))
 	}
+	if names := ConfigRunJobNames(jobs); len(names) > 0 {
+		slog.Info("Cron jobs from config file that run in their own container", "jobs", strings.Join(names, ","))
+	}
+}
+
+// ConfigRunJobNames returns the names of the config jobs with an image
+// instead of a container.
+func ConfigRunJobNames(jobs []config.JobConfig) []string {
+	var names []string
+	for _, job := range jobs {
+		if strings.TrimSpace(job.Container) == "" && strings.TrimSpace(job.Image) != "" && strings.TrimSpace(job.Name) != "" {
+			names = append(names, strings.TrimSpace(job.Name))
+		}
+	}
+	return names
 }

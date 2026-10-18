@@ -16,6 +16,13 @@ import (
 	"github.com/docker/docker/api/types/filters"
 )
 
+// RegisterConfigRunJobs registers the config file jobs that run in their own
+// container. They do not depend on a running container, so they are
+// registered once at startup.
+func RegisterConfigRunJobs() {
+	handleContainer(configRunOwner)
+}
+
 // InitializeAlreadyRunningContainers scans for already running containers and registers their cron jobs
 func InitializeAlreadyRunningContainers() {
 	_ = syncRunningContainers()
@@ -71,13 +78,14 @@ func resyncAfterReconnect() {
 	}
 	removed := make(map[string]bool)
 	for _, job := range GetCronJobManager().GetAllTyped() {
-		if job.Container == nil || running[job.Container.ID] || removed[job.Container.ID] {
+		if job.Container == nil || job.Container == configRunOwner || running[job.Container.ID] || removed[job.Container.ID] {
 			continue
 		}
 		slog.Info("Container stopped while event stream was down, removing cron jobs", "container", job.GetContainerDisplayName())
 		GetCronJobManager().Remove(job.Container.ID)
 		removed[job.Container.ID] = true
 	}
+	running[configRunOwner.ID] = true
 	GetCronJobManager().RetainLabelIssues(running)
 }
 
@@ -199,6 +207,11 @@ func handleDockerEvent(event events.Message) {
 func handleContainer(container *Container) {
 	ctx := cronadoCtx.AppCtx
 	cronLabelPrefix := ctx.Config.CronLabelPrefix
+
+	// The image of a job container may carry cron job labels of its own.
+	if IsRunContainer(container) {
+		return
+	}
 
 	containerCrons, issues := parseAndLogLabels(container, cronLabelPrefix)
 	GetCronJobManager().SetLabelIssues(container, issues)

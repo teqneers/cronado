@@ -2,9 +2,15 @@ package domain
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/distribution/reference"
 )
+
+// validEnvName matches environment variable names for the env.<NAME> label.
+var validEnvName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // trimOuterQuotes removes a matching pair of outer quotes (" or ') from s.
 // Unlike strings.Trim, it only removes quotes when both the first and last
@@ -31,6 +37,10 @@ type CronJobBuilder struct {
 	jitter              time.Duration
 	pingURL             string
 	replicas            string
+	image               string
+	network             string
+	volumes             []string
+	env                 []string
 	minScheduleInterval time.Duration
 	maxTimeout          time.Duration
 	hasErrors           bool
@@ -208,6 +218,53 @@ func (b *CronJobBuilder) SetPingURL(value string) {
 	b.pingURL = value
 }
 
+// SetImage makes the job run in a new container from image instead of in
+// the labeled container.
+func (b *CronJobBuilder) SetImage(value string) {
+	value = trimOuterQuotes(strings.TrimSpace(value))
+	if value == "" {
+		b.addFieldError("image", "image cannot be empty")
+		return
+	}
+	if _, err := reference.ParseNormalizedNamed(value); err != nil {
+		b.addFieldError("image", fmt.Sprintf("invalid image %q: %v", value, err))
+		return
+	}
+	b.image = value
+}
+
+// SetNetwork sets the network the job's own container is connected to.
+func (b *CronJobBuilder) SetNetwork(value string) {
+	b.network = trimOuterQuotes(strings.TrimSpace(value))
+}
+
+// SetVolumes sets the comma-separated volumes of the job's own container, in
+// the format of "docker run -v": source:/path[:options].
+func (b *CronJobBuilder) SetVolumes(value string) {
+	b.volumes = nil
+	for _, volume := range strings.Split(trimOuterQuotes(strings.TrimSpace(value)), ",") {
+		volume = strings.TrimSpace(volume)
+		if volume == "" {
+			continue
+		}
+		parts := strings.Split(volume, ":")
+		if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || !strings.HasPrefix(parts[1], "/") {
+			b.addError(fmt.Sprintf("invalid volume %q (expected source:/path or source:/path:ro)", volume))
+			continue
+		}
+		b.volumes = append(b.volumes, volume)
+	}
+}
+
+// SetEnv adds an environment variable to the job's own container.
+func (b *CronJobBuilder) SetEnv(name, value string) {
+	if !validEnvName.MatchString(name) {
+		b.addError(fmt.Sprintf("invalid environment variable name %q", name))
+		return
+	}
+	b.env = append(b.env, name+"="+value)
+}
+
 // addFieldError records an error for an invalid label value of field.
 func (b *CronJobBuilder) addFieldError(field, err string) {
 	if b.invalidFields == nil {
@@ -234,8 +291,17 @@ func (b *CronJobBuilder) IsValid() bool {
 	if b.schedule == "" && !b.invalidFields["schedule"] {
 		b.addError("schedule not set")
 	}
-	if b.command == "" && !b.invalidFields["cmd"] {
+	// A job with an image may leave the command to the image.
+	if b.command == "" && b.image == "" && !b.invalidFields["cmd"] && !b.invalidFields["image"] {
 		b.addError("command not set")
+	}
+	if b.image != "" && b.command != "" {
+		if _, err := splitArgs(b.command); err != nil {
+			b.addError(err.Error())
+		}
+	}
+	if b.image == "" && !b.invalidFields["image"] && (b.network != "" || len(b.volumes) > 0 || len(b.env) > 0) {
+		b.addError("network, volumes and env.* need an image, they only apply to jobs that run in their own container")
 	}
 	if b.timezone != "" && hasTimezonePrefix(b.schedule) {
 		b.addError("timezone label conflicts with CRON_TZ/TZ prefix in schedule")
@@ -283,6 +349,10 @@ func (b *CronJobBuilder) Build() (*CronJob, error) {
 		Jitter:      b.jitter,
 		PingURL:     b.pingURL,
 		Replicas:    b.replicas,
+		Image:       b.image,
+		Network:     b.network,
+		Volumes:     b.volumes,
+		Env:         b.env,
 		Status:      StatusIdle,
 		SchedulerId: -1,
 	}, nil
@@ -314,6 +384,10 @@ func (b *CronJobBuilder) Reset() {
 	b.jitter = 0
 	b.pingURL = ""
 	b.replicas = ReplicasOnce
+	b.image = ""
+	b.network = ""
+	b.volumes = nil
+	b.env = nil
 	b.hasErrors = false
 	b.errors = []string{}
 	b.invalidFields = nil
