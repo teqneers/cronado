@@ -99,11 +99,15 @@ type Config struct {
 	// PingAllowPrivateNetworks lets ping_url labels reach private and loopback
 	// addresses, e.g. a self-hosted Healthchecks instance (default false)
 	PingAllowPrivateNetworks bool
-	DaemonWatcher            DaemonWatcher
-	ServerConfig             ServerConfig
-	Log                      LogConfig
-	Notify                   Notify
-	Metrics                  Metrics
+	// AllowLabelImageJobs lets image labels create job containers. Off by
+	// default, because images can carry labels that would otherwise make
+	// cronado mount host paths for them (default false)
+	AllowLabelImageJobs bool
+	DaemonWatcher       DaemonWatcher
+	ServerConfig        ServerConfig
+	Log                 LogConfig
+	Notify              Notify
+	Metrics             Metrics
 	// Jobs are the cron jobs defined in the config file
 	Jobs []JobConfig
 }
@@ -122,6 +126,7 @@ func LoadConfig() *Config {
 	viper.SetDefault("max_timeout", "12h")
 	viper.SetDefault("shutdown_timeout", "8s")
 	viper.SetDefault("ping.allow_private_networks", false)
+	viper.SetDefault("allow_label_image_jobs", false)
 
 	// set default values for the daemon watcher
 	viper.SetDefault("daemon_watcher.enabled", true)
@@ -212,6 +217,7 @@ func LoadConfig() *Config {
 		MaxTimeout:               maxTimeout,
 		ShutdownTimeout:          shutdownTimeout,
 		PingAllowPrivateNetworks: viper.GetBool("ping.allow_private_networks"),
+		AllowLabelImageJobs:      viper.GetBool("allow_label_image_jobs"),
 		DaemonWatcher: DaemonWatcher{
 			Enabled: viper.GetBool("daemon_watcher.enabled"),
 			Timeout: viper.GetInt("daemon_watcher.timeout_seconds"),

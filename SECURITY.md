@@ -23,7 +23,7 @@ Cronado requires access to the **Docker socket** (`/var/run/docker.sock`) to fun
 
 Commands defined in container labels are executed via `docker exec` using `sh -c`. This is intentional — Cronado is designed to run arbitrary commands defined by the Docker host administrator. The security boundary is **who can set container labels**, which is controlled by Docker access permissions.
 
-Jobs with an `image` label make Cronado create a new container with the given volumes, network and environment, including bind mounts of host paths. This gives whoever sets labels no more than they already have: setting labels requires creating containers, which allows the same. For these jobs, a socket proxy must also allow image pulls and creating and removing containers.
+Jobs with an `image` make Cronado create a new container with the given volumes, network and environment, including bind mounts of host paths. Docker copies the labels of an image to its containers, so an untrusted image could define such a job and get access to the host. Therefore `image` labels are rejected unless `allow_label_image_jobs` is set; jobs with an `image` in the config file, which only the operator controls, always work. For these jobs, a socket proxy must also allow image pulls and creating and removing containers.
 
 ### Default User
 
