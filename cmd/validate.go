@@ -121,7 +121,8 @@ func runningContainerTargets() ([]validateTarget, error) {
 }
 
 // addConfigJobTargets adds a target for every container that config jobs
-// refer to but that is not running, so that those jobs are checked too.
+// refer to but that is not running, so that those jobs are checked too, and
+// one for the config jobs with an image.
 func addConfigJobTargets(targets []validateTarget, configJobs []config.JobConfig) []validateTarget {
 	running := make(map[string]bool, len(targets))
 	for _, t := range targets {
@@ -138,6 +139,12 @@ func addConfigJobTargets(targets []validateTarget, configJobs []config.JobConfig
 		targets = append(targets, validateTarget{
 			name:      name + " (not running)",
 			container: &domain.Container{Name: name},
+		})
+	}
+	if len(domain.ConfigRunJobNames(configJobs)) > 0 {
+		targets = append(targets, validateTarget{
+			name:      "own containers (image)",
+			container: domain.ConfigRunOwner(),
 		})
 	}
 	return targets
@@ -158,7 +165,7 @@ func validateTargets(w io.Writer, targets []validateTarget, configJobs []config.
 	configContainers := domain.ConfigJobContainers(configJobs)
 
 	for _, t := range targets {
-		if !hasPrefixedLabel(t.container.Labels, prefix) && len(configContainers[t.container.Name]) == 0 {
+		if !hasPrefixedLabel(t.container.Labels, prefix) && len(configContainers[t.container.Name]) == 0 && t.container != domain.ConfigRunOwner() {
 			continue
 		}
 		checked++

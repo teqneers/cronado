@@ -32,6 +32,7 @@ type CronJobManager struct {
 	labelIssues map[string][]ContainerLabelIssue
 	scheduler   Scheduler
 	executor    CommandExecutor
+	runner      ContainerRunner
 	metrics     MetricsCollector
 	notifier    NotificationService
 
@@ -59,6 +60,7 @@ var (
 type CronJobManagerOptions struct {
 	Scheduler Scheduler
 	Executor  CommandExecutor
+	Runner    ContainerRunner
 	Metrics   MetricsCollector
 	Notifier  NotificationService
 	// ShutdownTimeout limits how long Stop waits for running jobs. Zero
@@ -75,6 +77,9 @@ func NewCronJobManager(opts CronJobManagerOptions) *CronJobManager {
 	if opts.Executor == nil {
 		opts.Executor = NewDockerCommandExecutor(GetDockerClient())
 	}
+	if opts.Runner == nil {
+		opts.Runner = NewDockerContainerRunner(GetDockerClient())
+	}
 	if opts.Metrics == nil {
 		opts.Metrics = NewPrometheusMetricsCollector()
 	}
@@ -88,6 +93,7 @@ func NewCronJobManager(opts CronJobManagerOptions) *CronJobManager {
 		labelIssues: make(map[string][]ContainerLabelIssue),
 		scheduler:   opts.Scheduler,
 		executor:    opts.Executor,
+		runner:      opts.Runner,
 		metrics:     opts.Metrics,
 		notifier:    opts.Notifier,
 		stopping:    make(chan struct{}),
@@ -134,13 +140,18 @@ func (m *CronJobManager) addTyped(container *Container, job CronJob) error {
 	job.SetIdle()
 	m.jobs[jobID] = &job
 
-	slog.Info("Cron job registered",
+	attrs := []any{
 		"job_id", jobID,
 		"container", container.DisplayName(),
 		"cron_job", job.Name,
 		"schedule", job.SchedulerSpec(),
 		"command", truncateForLog(job.Command, 80),
-		"user", displayUser(job.User))
+		"user", displayUser(job.User),
+	}
+	if job.Image != "" {
+		attrs = append(attrs, "image", job.Image)
+	}
+	slog.Info("Cron job registered", attrs...)
 	slog.Debug("Cron job command detail", "job_id", jobID, "command", job.Command)
 
 	m.metrics.IncrementScheduledJobs()
@@ -256,7 +267,13 @@ func (m *CronJobManager) runCommand(container *Container, job *CronJob) {
 		"cron_job", job.Name)
 
 	sendPing(job, pingStart, "")
-	stdout, stderr, err := m.executor.ExecuteCommand(container, job.Name, job.Command, job.User, job.Timeout)
+	var stdout, stderr string
+	var err error
+	if job.Image != "" {
+		stdout, stderr, err = m.runner.RunContainer(job)
+	} else {
+		stdout, stderr, err = m.executor.ExecuteCommand(container, job.Name, job.Command, job.User, job.Timeout)
+	}
 	duration := time.Since(startTime).Seconds()
 
 	if stdout != "" {

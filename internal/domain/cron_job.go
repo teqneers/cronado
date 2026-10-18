@@ -36,6 +36,14 @@ type CronJob struct {
 	Jitter    time.Duration `json:"jitter,omitempty"`
 	PingURL   string        `json:"ping_url,omitempty"`
 	Replicas  string        `json:"replicas,omitempty"`
+	// Image makes the job run in a new container from this image instead of
+	// in Container, which then only defines the job.
+	Image   string   `json:"image,omitempty"`
+	Network string   `json:"network,omitempty"`
+	Volumes []string `json:"volumes,omitempty"`
+	// Env holds KEY=value entries for the new container. Not exposed in the
+	// API, since values are often secrets.
+	Env []string `json:"-"`
 	// Source is where the job is defined: SourceLabel or SourceConfig
 	Source string `json:"source,omitempty"`
 	Status string `json:"status"`
@@ -95,7 +103,7 @@ func (c *CronJob) IsValid() bool {
 		slog.Error("Cron job schedule is empty", "container", c.GetShortContainerID(), "cron_job", c.Name)
 		return false
 	}
-	if c.Command == "" {
+	if c.Command == "" && c.Image == "" {
 		slog.Error("Cron job command is empty", "container", c.GetShortContainerID(), "cron_job", c.Name)
 		return false
 	}

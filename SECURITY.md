@@ -23,6 +23,8 @@ Cronado requires access to the **Docker socket** (`/var/run/docker.sock`) to fun
 
 Commands defined in container labels are executed via `docker exec` using `sh -c`. This is intentional — Cronado is designed to run arbitrary commands defined by the Docker host administrator. The security boundary is **who can set container labels**, which is controlled by Docker access permissions.
 
+Jobs with an `image` label make Cronado create a new container with the given volumes, network and environment, including bind mounts of host paths. This gives whoever sets labels no more than they already have: setting labels requires creating containers, which allows the same. For these jobs, a socket proxy must also allow image pulls and creating and removing containers.
+
 ### Default User
 
 Commands run as the **container's own configured user** (its `USER`) when no `user` label is specified. To run a command as a different user, for example root, set it explicitly:

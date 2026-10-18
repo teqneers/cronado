@@ -60,3 +60,13 @@ metrics:
 #    cmd: pg_dump -U postgres mydb > /backups/daily.sql
 #    user: postgres
 #    timeout: 10m
+#  # Runs in a new container from the image instead (image instead of container)
+#  - name: offsite
+#    image: restic/restic:0.17.3
+#    schedule: "0 3 * * *"
+#    cmd: backup /data
+#    volumes:
+#      - /srv/app/data:/data:ro
+#    network: backend
+#    environment:
+#      - RESTIC_REPOSITORY=s3:s3.example.com/backups

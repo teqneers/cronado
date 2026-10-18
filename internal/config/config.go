@@ -79,6 +79,14 @@ type JobConfig struct {
 	Jitter    string `mapstructure:"jitter"`
 	PingURL   string `mapstructure:"ping_url"`
 	Replicas  string `mapstructure:"replicas"`
+	// Image runs the job in a new container from this image, instead of in
+	// Container. Network, Volumes and Environment configure that container.
+	Image   string   `mapstructure:"image"`
+	Network string   `mapstructure:"network"`
+	Volumes []string `mapstructure:"volumes"`
+	// Environment is a list of KEY=value entries. A list rather than a map,
+	// because Viper lowercases map keys.
+	Environment []string `mapstructure:"environment"`
 }
 
 // Config holds application settings
