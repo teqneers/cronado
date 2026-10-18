@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/teqneers/cronado/internal/config"
+	cronadoCtx "github.com/teqneers/cronado/internal/context"
 )
 
 // Sources of a cron job definition
@@ -142,12 +143,30 @@ func ParseConfigJobs(container *Container, jobs []config.JobConfig, minScheduleI
 	return parsed, issues
 }
 
+// allowLabelImageJobs reports whether image labels may define jobs. Docker
+// copies the labels of an image to its containers, so without this setting
+// any image could make cronado start a container with host paths mounted.
+var allowLabelImageJobs = func() bool {
+	return cronadoCtx.AppCtx != nil && cronadoCtx.AppCtx.Config != nil && cronadoCtx.AppCtx.Config.AllowLabelImageJobs
+}
+
 // ParseContainerJobs returns the jobs of container from its labels and from
 // the config file. A config job with the same name as a label job is
-// rejected, so the label wins.
+// rejected, so the label wins. Label jobs with an image are rejected unless
+// allow_label_image_jobs is set.
 func ParseContainerJobs(container *Container, prefix string, configJobs []config.JobConfig, minScheduleInterval, maxTimeout time.Duration) (map[string]CronJob, []LabelIssue) {
 	jobs, issues := ParseJobLabels(container, prefix, minScheduleInterval, maxTimeout)
 	for name, job := range jobs {
+		if job.Image != "" && !allowLabelImageJobs() {
+			delete(jobs, name)
+			issues = append(issues, LabelIssue{
+				Job:         name,
+				Label:       prefix + "." + name + ".image",
+				Message:     "image labels are disabled, set allow_label_image_jobs (CRONADO_ALLOW_LABEL_IMAGE_JOBS=true) if you trust all images and everyone who sets labels, or define the job in the config file",
+				JobRejected: true,
+			})
+			continue
+		}
 		job.Source = SourceLabel
 		jobs[name] = job
 	}

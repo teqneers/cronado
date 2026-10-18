@@ -430,3 +430,35 @@ func TestIsRunContainer(t *testing.T) {
 		t.Error("regular container detected as job container")
 	}
 }
+
+func TestParseContainerJobs_LabelImageJobsNeedOptIn(t *testing.T) {
+	container := &Container{ID: "abc123456789", Name: "app", Labels: map[string]string{
+		"cronado.backup.enabled":  "true",
+		"cronado.backup.schedule": "@daily",
+		"cronado.backup.image":    "alpine",
+		"cronado.backup.volumes":  "/:/host",
+		"cronado.exec.enabled":    "true",
+		"cronado.exec.schedule":   "@daily",
+		"cronado.exec.cmd":        "true",
+	}}
+	configJobs := []config.JobConfig{{Name: "offsite", Image: "alpine", Schedule: "@daily"}}
+
+	jobs, issues := ParseContainerJobs(container, "cronado", configJobs, 0, 0)
+	if _, ok := jobs["backup"]; ok || len(jobs) != 1 {
+		t.Errorf("jobs = %v, want only exec", jobs)
+	}
+	if len(issues) != 1 || !issues[0].JobRejected || issues[0].Label != "cronado.backup.image" ||
+		!strings.Contains(issues[0].Message, "allow_label_image_jobs") {
+		t.Errorf("issues = %+v", issues)
+	}
+	if jobs, _ := ParseContainerJobs(ConfigRunOwner(), "cronado", configJobs, 0, 0); len(jobs) != 1 {
+		t.Errorf("config jobs = %v, want offsite without opt-in", jobs)
+	}
+
+	allowLabelImageJobs = func() bool { return true }
+	t.Cleanup(func() { allowLabelImageJobs = func() bool { return false } })
+	jobs, issues = ParseContainerJobs(container, "cronado", nil, 0, 0)
+	if _, ok := jobs["backup"]; !ok || len(issues) != 0 {
+		t.Errorf("with opt-in: jobs = %v, issues = %+v", jobs, issues)
+	}
+}

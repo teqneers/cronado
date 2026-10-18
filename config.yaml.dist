@@ -20,6 +20,11 @@ server:
   # When empty, authentication is disabled (default).
   # Set via CRONADO_SERVER_API_TOKEN environment variable in production.
   api_token: ""
+# Allow image labels, which make cronado create job containers with the
+# labels' volumes and network. Images can carry labels, so only enable if
+# you trust all images and label authors. Config file jobs with an image
+# always work.
+allow_label_image_jobs: false
 ping:
   # Allow ping_url labels to reach private and loopback addresses,
   # e.g. a self-hosted Healthchecks instance. Only enable if label authors are trusted.

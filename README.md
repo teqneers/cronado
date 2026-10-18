@@ -334,7 +334,9 @@ jobs:
 
 ### Jobs in their own container
 
-Some jobs need tools that the application container does not have, for example a backup with [restic](https://restic.net). Set `image` and cronado runs the job in a new container from that image, like `docker run --rm`:
+Some jobs need tools that the application container does not have, for example a backup with [restic](https://restic.net). Set `image` and cronado runs the job in a new container from that image, like `docker run --rm`.
+
+Jobs with `image` in the config file always work. `image` **labels** must be enabled with `allow_label_image_jobs: true` (`CRONADO_ALLOW_LABEL_IMAGE_JOBS=true`). Docker copies the labels of an image to its containers, so without this setting any image you run could make cronado start a container with host paths mounted. Enable it if you trust all images on the host and everyone who sets labels. Without it, `image` labels are rejected as a [label problem](#list-label-problems).
 
 ```yaml
 services:
@@ -342,6 +344,8 @@ services:
     image: ghcr.io/teqneers/cronado:v1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      CRONADO_ALLOW_LABEL_IMAGE_JOBS: "true"
     labels:
       cronado.backup.enabled: "true"
       cronado.backup.schedule: "0 3 * * *"
@@ -405,6 +409,7 @@ All settings can be set via environment variables using the `CRONADO_` prefix:
 | `CRONADO_MAX_TIMEOUT`                    | Maximum allowed job timeout          | `12h`             |
 | `CRONADO_SHUTDOWN_TIMEOUT`               | How long to wait for running jobs when cronado stops; see [Stopping and updating cronado](#stopping-and-updating-cronado) | `8s` |
 | `CRONADO_PING_ALLOW_PRIVATE_NETWORKS`    | Allow `ping_url` to reach private/loopback addresses | `false` |
+| `CRONADO_ALLOW_LABEL_IMAGE_JOBS`         | Allow `image` labels; see [Jobs in their own container](#jobs-in-their-own-container) | `false` |
 | `CRONADO_DAEMON_WATCHER_ENABLED`         | Docker daemon health monitoring      | `true`            |
 | `CRONADO_DAEMON_WATCHER_TIMEOUT_SECONDS` | Health check interval                | `5`               |
 | `CRONADO_NOTIFY_INTERVAL_SECONDS`        | Notification throttle (same subject) | `3600`            |
