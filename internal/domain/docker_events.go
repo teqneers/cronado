@@ -23,11 +23,6 @@ func RegisterConfigRunJobs() {
 	handleContainer(configRunOwner)
 }
 
-// InitializeAlreadyRunningContainers scans for already running containers and registers their cron jobs
-func InitializeAlreadyRunningContainers() {
-	_ = syncRunningContainers()
-}
-
 // syncRunningContainers registers the cron jobs of all running containers and
 // returns the IDs of those containers.
 func syncRunningContainers() map[string]bool {
@@ -97,8 +92,9 @@ const (
 	stableStreamDuration   = 30 * time.Second
 )
 
-// StartEventListener listens for Docker container events and manages cron jobs
-// accordingly. A broken event stream is reconnected with backoff.
+// StartEventListener registers the cron jobs of the running containers and
+// then keeps them in line with Docker container events. A broken event stream
+// is reconnected with backoff.
 func StartEventListener(stop chan os.Signal) {
 	eventFilter := filters.NewArgs(
 		filters.Arg("type", "container"),
@@ -109,9 +105,10 @@ func StartEventListener(stop chan os.Signal) {
 	)
 
 	failures := 0
+	onSubscribed := func() { _ = syncRunningContainers() }
 	for {
 		connectedAt := time.Now()
-		err, stopped := listenForEvents(eventFilter, stop)
+		err, stopped := listenForEvents(eventFilter, stop, onSubscribed)
 		if stopped {
 			slog.Debug("Received shutdown signal, stopping event listener")
 			GetCronJobManager().Shutdown()
@@ -138,13 +135,17 @@ func StartEventListener(stop chan os.Signal) {
 			GetCronJobManager().Shutdown()
 			os.Exit(0)
 		}
-		resyncAfterReconnect()
+		onSubscribed = resyncAfterReconnect
 	}
 }
 
 // listenForEvents consumes one event stream until it fails or a stop signal
 // arrives. It returns the stream error, or stopped=true on shutdown.
-func listenForEvents(eventFilter filters.Args, stop chan os.Signal) (err error, stopped bool) {
+//
+// onSubscribed runs once the stream is subscribed and before its events are
+// handled. Scanning the containers there means a container started during
+// the scan still arrives as an event; handling it twice is harmless.
+func listenForEvents(eventFilter filters.Args, stop chan os.Signal, onSubscribed func()) (err error, stopped bool) {
 	// Events stream should not timeout - it's a long-running connection
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -153,6 +154,8 @@ func listenForEvents(eventFilter filters.Args, stop chan os.Signal) (err error, 
 	})
 	eventStreamConnected.Store(true)
 	defer eventStreamConnected.Store(false)
+
+	onSubscribed()
 
 	for {
 		select {
