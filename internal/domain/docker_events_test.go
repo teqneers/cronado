@@ -1,8 +1,15 @@
 package domain
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/client"
 )
 
 func TestParseCronsFromContainer_TimeoutLabel(t *testing.T) {
@@ -305,5 +312,60 @@ func TestParseCronsFromContainer_InvalidJobNames(t *testing.T) {
 				t.Errorf("expected %d cron jobs, got %d", tt.want, len(result))
 			}
 		})
+	}
+}
+
+// TestListenForEvents_ScansAfterSubscribing checks that the container scan
+// runs only once the event stream is subscribed, so a container started
+// during the scan is not missed.
+func TestListenForEvents_ScansAfterSubscribing(t *testing.T) {
+	var subscribed atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1.47/events" {
+			http.NotFound(w, r)
+			return
+		}
+		subscribed.Store(true)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+
+	cli, err := client.NewClientWithOpts(client.WithHost("tcp://"+server.Listener.Addr().String()), client.WithVersion("1.47"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := dockerClient
+	dockerClient = cli
+	t.Cleanup(func() { dockerClient = previous })
+
+	stop := make(chan os.Signal, 1)
+	scannedAfterSubscribe := make(chan bool, 1)
+	done := make(chan bool, 1)
+	go func() {
+		_, stopped := listenForEvents(filters.NewArgs(), stop, func() {
+			scannedAfterSubscribe <- subscribed.Load()
+		})
+		done <- stopped
+	}()
+
+	select {
+	case ok := <-scannedAfterSubscribe:
+		if !ok {
+			t.Error("containers were scanned before the event stream was subscribed")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("onSubscribed was not called")
+	}
+
+	stop <- os.Interrupt
+	select {
+	case stopped := <-done:
+		if !stopped {
+			t.Error("listenForEvents did not report the stop signal")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("listenForEvents did not return after the stop signal")
 	}
 }

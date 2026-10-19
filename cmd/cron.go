@@ -64,7 +64,6 @@ var cronCmd = &cobra.Command{
 		domain.LogConfigJobs(config.Jobs)
 		domain.RemoveLeftoverRunContainers(domain.GetDockerClient())
 		domain.RegisterConfigRunJobs()
-		domain.InitializeAlreadyRunningContainers()
 		domain.StartEventListener(stop)
 
 		<-stop
