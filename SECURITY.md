@@ -16,7 +16,7 @@ Please include:
 Cronado requires access to the **Docker socket** (`/var/run/docker.sock`) to function. This is a privileged operation. Users should:
 
 - Treat Cronado as **root-equivalent on the host**. Mounting the socket read-only (`:ro`) does not restrict the Docker API; it only prevents replacing the socket file.
-- A [Docker socket proxy](https://github.com/Tecnativa/docker-socket-proxy) gives limited protection, because Cronado needs the `CONTAINERS`, `EXEC` and `POST` permissions
+- A [Docker socket proxy](https://github.com/Tecnativa/docker-socket-proxy) gives limited protection, because Cronado needs the `CONTAINERS`, `EXEC` and `POST` permissions, and for jobs with an `image` also `IMAGES` and `DELETE`
 - Run Cronado in a dedicated, minimal container
 
 ### Command Execution
@@ -35,7 +35,7 @@ cronado.my-job.user=root
 
 ### Timeouts
 
-A command that exceeds its timeout is killed inside the container with `timeout -s KILL` (available in busybox and coreutils images). Command output kept by Cronado is capped at 64 KiB per stream.
+A command that exceeds its timeout is killed inside the container with `timeout -s KILL` (available in busybox and coreutils images). For jobs with an `image`, the job container is killed and removed. Command output kept by Cronado is capped at 64 KiB per stream.
 
 ### Command Output in Notifications
 

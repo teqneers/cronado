@@ -10,8 +10,8 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/teqneers/cronado)](go.mod)
 
 A lightweight cron job scheduler for Docker containers. Cronado watches Docker events, detects containers with specific
-labels, and automatically schedules commands to run inside them — no sidecars, no config files per container, just
-labels.
+labels, and automatically schedules commands to run inside them, or in a new container from an image. No sidecars, no
+config files per container, just labels.
 
 > **Looking for an alternative
 to [Ofelia](https://github.com/mcuadros/ofelia), [Chadburn](https://github.com/PremoWeb/chadburn), [Supercronic](https://github.com/aptible/supercronic),
@@ -27,7 +27,7 @@ or host-level crontab for Docker?** Cronado offers a modern, actively maintained
 | Label-driven configuration         | Yes     | Yes                                          | Yes                                              | No                                                    | No           |
 | Per-job timeout                    | Yes     | No                                           | No                                               | No                                                    | No           |
 | Built-in Prometheus metrics        | Yes     | No                                           | No                                               | Partial                                               | No           |
-| Failure notifications (email/ntfy) | Yes     | No                                           | Slack                                            | No                                                    | No           |
+| Failure notifications (email/ntfy/webhooks) | Yes     | No                                           | Slack                                            | No                                                    | No           |
 | Actively maintained                | Yes     | Limited                                      | Slow going                                       | Yes                                                   | N/A          |
 | Docker daemon health monitoring    | Yes     | No                                           | No                                               | No                                                    | No           |
 
@@ -67,6 +67,10 @@ docker run -d \
 > **Note:** `CRONADO_SERVER_HOST=0.0.0.0` is required when running in a container. The default `127.0.0.1`
 > binds only to localhost inside the container, making the API unreachable from the host even with `-p 8080:8080`.
 
+> **Exits with `permission denied` on `docker.sock`?** The image runs as a non-root user in group `999`, which is the
+> `docker` group on many Linux hosts, but not on all. Add the group of the socket with `--group-add <gid>`
+> (Compose: `group_add: ["<gid>"]`). See [Docker socket permission denied](#docker-socket-permission-denied).
+
 ### Docker Compose
 
 ```yaml
@@ -83,6 +87,27 @@ services:
       CRONADO_SERVER_HOST: "0.0.0.0"
       CRONADO_LOG_LEVEL: info
 ```
+
+### Your first job
+
+Start any container with cronado labels. This one prints the date every minute:
+
+```bash
+docker run -d --name hello \
+  --label cronado.date.enabled=true \
+  --label 'cronado.date.schedule=* * * * *' \
+  --label 'cronado.date.cmd=date' \
+  alpine sleep infinity
+```
+
+Check that cronado picked it up, then watch the runs in its log (the command's output is logged with `CRONADO_LOG_LEVEL=debug`):
+
+```bash
+docker exec cronado ./cronado cron-job list
+docker logs -f cronado
+```
+
+Nothing listed? `cron-job list` also shows label problems, e.g. a typo in a label name. See [Label Reference](#label-reference) for all properties.
 
 ### Build from Source
 
@@ -111,13 +136,13 @@ go build -o cronado main.go
                     cron schedules
                          |
                     +-----------+
-                    | Scheduler |----> docker exec into containers
-                    +-----------+      on cron schedule
+                    | Scheduler |----> docker exec into containers,
+                    +-----------+      or run a job container from an image
                          |
               +----------+----------+
               |          |          |
           Prometheus   Logs    Notifications
-          /metrics              (email/ntfy)
+          /metrics          (email/ntfy/webhooks)
 ```
 
 ## Scheduling Jobs via Container Labels
@@ -136,11 +161,11 @@ cronado.<job-name>.ping_url=https://hc-ping.com/<uuid>
 cronado.<job-name>.replicas=once|all
 ```
 
-Each job needs at least `enabled`, `schedule`, and `cmd`. The prefix can be changed via `CRONADO_CRON_LABEL_PREFIX`.
+Each job needs at least `enabled`, `schedule`, and `cmd`. The prefix can be changed via `CRONADO_CRON_LABEL_PREFIX`. To run a job in a new container from an image instead, see [Jobs in their own container](#jobs-in-their-own-container).
 
 ### Example
 
-Run a container with a cron job that logs timestamps every minute:
+Run PostgreSQL with a nightly backup job:
 
 ```bash
 docker run -d \
@@ -275,7 +300,7 @@ Example output:
 ```
 app
   ✓ cleanup: @daily (enabled)
-  ! cronado.cleanup.timout: unknown property "timout", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas (label ignored)
+  ! cronado.cleanup.timout: unknown property "timout", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas,image,network,volumes,env.<NAME> (label ignored)
   ✗ report: invalid cron schedule "0 25 * * *": end of range (25) above maximum (23): 25
 db (container my-db)
   ✓ backup: 0 2 * * * (enabled)
@@ -287,7 +312,7 @@ Checked 2 containers: 3 jobs OK, 1 job rejected, 1 label ignored.
 - **✓** the job is valid. Disabled jobs are listed too.
 - **✗** the job is rejected and will not run. All reasons are listed, e.g. an invalid value and a missing `schedule`.
 - **!** a single label is ignored, e.g. an unknown property or an invalid job name. The job itself may still run, but probably not as intended.
-- **Config file jobs:** without `-f`, the [jobs in the config file](#jobs-in-the-config-file) are checked too and marked `config file`. With `-f`, only the Compose labels are checked.
+- **Config file jobs:** without `-f`, the [jobs in the config file](#jobs-in-the-config-file) are checked too and marked `config file`; those with an `image` are listed under `own containers (image)`. With `-f`, only the Compose labels are checked.
 - **Exit code:** `0` if nothing was found, `1` if any job was rejected or label ignored, `2` if the Compose file or Docker could not be read. Use it in CI to fail a deployment.
 - **Settings:** the label prefix, `CRONADO_MIN_SCHEDULE_INTERVAL` and `CRONADO_MAX_TIMEOUT` are read from the same config and environment as `cronado cron`. Run `validate` with the same settings as your scheduler, or limits like the minimum interval are not checked the same way. `docker exec cronado ./cronado validate` always uses the scheduler's own settings.
 - **Compose limits:** only `labels` and `container_name` are read. Variables like `${VAR}` are not substituted; `$$` is read as `$`. Run `docker compose config > resolved.yml` first if your labels use variables.
@@ -502,7 +527,7 @@ Response:
 ]
 ```
 
-Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label. `source` is `label` or `config` (see [Jobs in the config file](#jobs-in-the-config-file)). `replicas` is `once` or `all`, and `standby` is `true` when another replica of the Compose service runs the job (see [Replicated services](#replicated-services)).
+Without an API token, `command` and `ping_url` are redacted. `timezone` is included only for jobs with a [`timezone`](#time-zones) label. `source` is `label` or `config` (see [Jobs in the config file](#jobs-in-the-config-file)). `replicas` is `once` or `all`, and `standby` is `true` when another replica of the Compose service runs the job (see [Replicated services](#replicated-services)). Jobs [in their own container](#jobs-in-their-own-container) also have `image` and, if set, `network` and `volumes`; their environment variables are never returned.
 
 `id` identifies the job in the [run, pause and resume](#run-pause-and-resume-jobs) endpoints. `status` is `idle` between runs, `pending` while a run waits out its [jitter](#spreading-start-times-jitter) delay, and `running` while the command executes. `timeout` and `jitter` are durations in nanoseconds; `jitter` is omitted when not set.
 
@@ -519,7 +544,7 @@ curl -X POST -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/ap
 curl -X POST -H "Authorization: Bearer my-secret-token" http://127.0.0.1:8080/api/cron-job/abcdef123456-backup/resume
 ```
 
-The job ID is the `id` field in `/api/cron-job`, or the `ID` column of `cronado cron-job list`. It is the short container ID plus the job name, so it changes when the container is recreated.
+The job ID is the `id` field in `/api/cron-job`, or the `ID` column of `cronado cron-job list`. It is the short container ID plus the job name, so it changes when the container is recreated. Config file jobs with an `image` have the fixed ID `cronado-<name>`.
 
 **Run** (`202 Accepted`):
 
@@ -560,7 +585,7 @@ Response:
     "container_name": "my-app",
     "job": "cleanup",
     "label": "cronado.cleanup.timout",
-    "message": "unknown property \"timout\", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas",
+    "message": "unknown property \"timout\", valid properties are enabled,schedule,cmd,user,timezone,timeout,jitter,ping_url,replicas,image,network,volumes,env.<NAME>",
     "job_rejected": false
   }
 ]
@@ -746,13 +771,26 @@ For [jobs in their own container](#jobs-in-their-own-container), cronado also in
 
 ### Docker socket permission denied
 
-Ensure the cronado container has access to the Docker socket:
+Cronado exits right after start with `permission denied while trying to connect to the Docker daemon socket`. The image runs as the non-root user `app` in group `999`, which only matches the socket on hosts whose `docker` group has that ID. Find the group ID of the socket:
 
 ```bash
-docker run -v /var/run/docker.sock:/var/run/docker.sock:ro ...
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alpine stat -c %g /var/run/docker.sock
 ```
 
-If running as a non-root user on the host, you may need to add the user to the `docker` group.
+Then add that group to the cronado container, e.g. for `998`:
+
+```bash
+docker run --group-add 998 -v /var/run/docker.sock:/var/run/docker.sock:ro ... ghcr.io/teqneers/cronado:latest
+```
+
+```yaml
+services:
+  cronado:
+    group_add:
+      - "998"
+```
+
+On Docker Desktop (macOS, Windows), the socket belongs to group `0`, so use `--group-add 0`.
 
 ### Container not being detected
 
@@ -793,8 +831,9 @@ Cronado includes several built-in security measures:
 - **Timeout cap** -- job timeouts are capped at a configurable maximum (default 12 hours) to prevent runaway executions
 - **Job name validation** -- only alphanumeric characters, hyphens, and underscores are accepted in job names
 - **Command log redaction** -- commands are truncated in INFO logs to avoid leaking credentials; full commands are logged at DEBUG level only
+- **Image labels off by default** -- `image` labels, which make cronado create containers with host mounts, need `allow_label_image_jobs`, because images can carry labels; see [Jobs in their own container](#jobs-in-their-own-container)
 
-For a full discussion of the security model, including Docker socket access and `sh -c` execution, see [SECURITY.md](SECURITY.md).
+For a full discussion of the security model, including Docker socket access and `sh -c` execution, see [SECURITY.md](SECURITY.md). Report vulnerabilities privately as described there.
 
 ## Contributors
 
@@ -806,10 +845,6 @@ Cronado.
 ## Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Security
-
-For security concerns, see [SECURITY.md](SECURITY.md).
 
 ## License
 
