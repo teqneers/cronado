@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-19
+
 ### Added
 
 - `timezone` label to run a job's schedule in an IANA time zone, e.g. `cronado.<job>.timezone=Europe/Berlin`. Invalid names and a conflicting `CRON_TZ=` prefix in the schedule are rejected. See [Time zones](README.md#time-zones), including how daylight saving time affects jobs in the skipped or repeated hour
@@ -16,14 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /api/cron-job/{id}/run`, `/pause` and `/resume` to run a job now or skip its scheduled runs, and matching `cronado cron-job run|pause|resume <job-id>` commands. They require `server.api_token` and return `403` without it. Pauses are kept in memory only. See [Run, Pause and Resume Jobs](README.md#run-pause-and-resume-jobs)
 - `cronado_job_paused` metric and `paused` field in `/api/cron-job`
 - `cronado validate` command to check cron job labels with the scheduler's own rules. `-f` checks the services of one or more Compose files without Docker access, e.g. in CI; without `-f`, it checks all running containers. Exits with `1` if any problem is found. See [Checking labels before deployment](README.md#checking-labels-before-deployment)
+- `replicas` label to choose whether a job of a Compose service with several replicas runs on one replica (`once`, default) or on each (`all`). Jobs of the other replicas are shown as `standby` in the API and `cronado cron-job list`, and in the `cronado_job_standby` metric. See [Replicated services](README.md#replicated-services)
+- Jobs in the config file: a `jobs:` list with `name`, `container` and the label properties, for containers whose labels you cannot change. Config jobs are marked with `"source": "config"` in the API and label problems and `from config file` in `cronado cron-job list`, and `cronado validate` checks them. See [Jobs in the config file](README.md#jobs-in-the-config-file)
+- `image` label to run a job in a new container from an image instead of inside the labeled container, with `network`, `volumes` and `env.<NAME>` labels. The image is pulled if missing, and the container is removed after each run. Config file jobs take `image` instead of `container`. `image` labels must be enabled with `allow_label_image_jobs` (`CRONADO_ALLOW_LABEL_IMAGE_JOBS=true`), because images can carry labels. See [Jobs in their own container](README.md#jobs-in-their-own-container)
 
 ### Changed
 
+- **Breaking:** jobs of a Compose service with several replicas now run on one replica only, the one with the lowest container number; the next replica takes over when it stops. Add `cronado.<job>.replicas=all` to jobs that must run in every replica
+- On shutdown, cronado waits for running jobs for at most `shutdown_timeout` (`CRONADO_SHUTDOWN_TIMEOUT`, default `8s`, below Docker's 10s stop grace period) and logs the jobs it abandons. Previously it waited without a limit until Docker killed it. Manual runs are refused with `503` during shutdown. See [Stopping and updating cronado](README.md#stopping-and-updating-cronado)
 - `cronado cron-job list` shows the job ID (needed for run, pause and resume) instead of the internal scheduler entry ID, and marks paused jobs
 - `cronado cron-job list` connects via loopback when the server listens on `0.0.0.0` or `::`, like `cronado healthcheck`
-
 - A job with an invalid label now reports all problems at once, including missing required labels, instead of only the first error
 - Ignored labels (unknown property, invalid label format or job name) are logged with a consistent `Ignoring invalid cron job label` message
+
+### Security
+
+- GitHub Actions are pinned to commit SHAs, and Dependabot keeps them and the Go modules up to date
+
+### Fixed
+
+- Containers started while cronado is starting up are no longer missed until their next restart
 
 ## [1.1.0] - 2026-10-13
 
