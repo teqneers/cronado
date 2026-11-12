@@ -1,13 +1,11 @@
 module github.com/teqneers/cronado
 
-go 1.26.0
-
-toolchain go1.26.9
+go 1.26.10
 
 require (
 	github.com/containerd/errdefs v1.0.0
-	github.com/wneessen/go-mail v0.8.1
-	go.yaml.in/yaml/v3 v3.0.5
+	github.com/wneessen/go-mail v0.8.2
+	go.yaml.in/yaml/v3 v3.0.6
 )
 
 require (
